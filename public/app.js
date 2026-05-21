@@ -518,11 +518,12 @@ function buildUpiCard(qrEl, logoImg, data) {
   const tagline   = (data.tagline  || '').trim();
   const upiId     = data.upiId || '';
 
-  /* 5"×8" with logo (800px) / 5"×7" without logo (700px) at 100px/in × 2× retina
-   * Branding ~22% | QR 50% | Info 14% | Footer 7%  (with logo)
-   * QS=380 = 3.8" → 15mm quiet zone: (500-400)/2 = 50px side-margin on card
+  /* Exact 5"×7" rectangle (W=500, H=700) at 100px/in × 2× retina
+   * No-logo: H=620 (5"×6.2")
+   * QS=380 = 3.8" QR, qbPad=10, 15mm quiet zone
+   * Layout: 19% branding | 57% QR | 11% info | 7% footer
    */
-  const W=500, H=logoImg ? 800 : 700, M=12, SC=2;
+  const W=500, H=logoImg ? 700 : 620, M=12, SC=2;
   const out = document.createElement('canvas');
   out.width=(W+M*2)*SC; out.height=(H+M*2)*SC;
   const ctx=out.getContext('2d');
@@ -545,113 +546,110 @@ function buildUpiCard(qrEl, logoImg, data) {
   ctx.fillStyle='#ffffff'; rr(M,M,W,H,20); ctx.fill();
   ctx.save(); rr(M,M,W,H,20); ctx.clip();
 
-  let y=M+22;   // generous top padding
+  let y = M+14;
 
-  // ── LOGO (max 100px tall, preserve aspect) ────────────────────────
+  // ── LOGO (max 82px tall, preserve aspect) ────────────────────────
   if (logoImg) {
-    const maxH=100, maxW=W*0.6;
+    const maxH=82, maxW=W*0.62;
     const sc=Math.min(maxH/logoImg.naturalHeight, maxW/logoImg.naturalWidth, 1);
     const lw=Math.round(logoImg.naturalWidth*sc), lh=Math.round(logoImg.naturalHeight*sc);
     ctx.drawImage(logoImg, cx-lw/2, y, lw, lh);
-    y+=lh+12;
+    y += lh+8;
   }
 
-  // ── BRAND NAME ────────────────────────────────────────────────────
+  // ── BRAND NAME ───────────────────────────────────────────────────
   ctx.fillStyle=pc; ctx.textAlign='center'; ctx.textBaseline='top';
-  let fs=logoImg ? 28 : 32;
+  let fs = logoImg ? 24 : 28;
   ctx.font=`900 ${fs}px sans-serif`;
-  while(ctx.measureText(brandName.toUpperCase()).width>W-40&&fs>14){fs--;ctx.font=`900 ${fs}px sans-serif`;}
+  while(ctx.measureText(brandName.toUpperCase()).width>W-32&&fs>12){fs--;ctx.font=`900 ${fs}px sans-serif`;}
   ctx.fillText(brandName.toUpperCase(), cx, y);
-  y+=fs+6;
+  y += fs+4;
 
-  // ── TAGLINE with decorative lines, or thin divider (both = 18px) ──
+  // ── TAGLINE with flanking lines, or thin divider ──────────────────
   if (tagline) {
     const tl=tagline.toUpperCase();
-    ctx.font='11px sans-serif';
+    ctx.font='10px sans-serif';
     const tW=ctx.measureText(tl).width;
-    const ll=Math.max(0,(W-tW-60)/2-8);
+    const ll=Math.max(0,(W-tW-48)/2-6);
     ctx.globalAlpha=0.3; ctx.strokeStyle=pc; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(M+20,y+7); ctx.lineTo(M+20+ll,y+7); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx+tW/2+8,y+7); ctx.lineTo(cx+tW/2+8+ll,y+7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(M+16,y+6); ctx.lineTo(M+16+ll,y+6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+tW/2+6,y+6); ctx.lineTo(cx+tW/2+6+ll,y+6); ctx.stroke();
     ctx.globalAlpha=0.6; ctx.fillStyle=pc;
-    ctx.fillText(tl, cx, y);
+    ctx.fillText(tl, cx, y+1);
     ctx.globalAlpha=1;
   } else {
-    ctx.strokeStyle=pc; ctx.lineWidth=1; ctx.globalAlpha=0.15;
-    ctx.beginPath(); ctx.moveTo(M+20,y+9); ctx.lineTo(M+W-20,y+9); ctx.stroke();
+    ctx.strokeStyle=pc; ctx.lineWidth=1; ctx.globalAlpha=0.13;
+    ctx.beginPath(); ctx.moveTo(M+16,y+5); ctx.lineTo(M+W-16,y+5); ctx.stroke();
     ctx.globalAlpha=1;
   }
-  y+=18;
+  y += 14;
 
   // ── SCAN & PAY with em-dashes ─────────────────────────────────────
-  y+=6;
-  ctx.font='bold 16px sans-serif'; ctx.fillStyle=pc; ctx.textBaseline='top';
+  y += 4;
+  ctx.font='bold 14px sans-serif'; ctx.fillStyle=pc; ctx.textBaseline='top';
   const spTxt='SCAN & PAY', spW=ctx.measureText(spTxt).width;
-  const dl=Math.max(0,(W-spW-60)/2-8);
+  const dl=Math.max(0,(W-spW-48)/2-6);
   ctx.strokeStyle=pc; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.moveTo(M+20,y+10); ctx.lineTo(M+20+dl,y+10); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(cx+spW/2+8,y+10); ctx.lineTo(cx+spW/2+8+dl,y+10); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(M+16,y+8); ctx.lineTo(M+16+dl,y+8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+spW/2+6,y+8); ctx.lineTo(cx+spW/2+6+dl,y+8); ctx.stroke();
   ctx.fillText(spTxt, cx, y);
-  y+=22;
+  y += 18;
 
   // ── VIA UPI ───────────────────────────────────────────────────────
-  ctx.font='11px sans-serif'; ctx.globalAlpha=0.55;
+  ctx.font='10px sans-serif'; ctx.globalAlpha=0.5;
   ctx.fillText('VIA UPI', cx, y); ctx.globalAlpha=1;
-  y+=18;
+  y += 14;
 
-  // ── QR BOX (QS=380, qbPad=10 → 15mm quiet zone) ──────────────────
+  // ── QR BOX — QS=380 (3.8"), 15mm quiet zone ───────────────────────
   const QS=380, qbPad=10, qbSz=QS+qbPad*2;
-  const qbX=M+(W-qbSz)/2, qbY=y+4;
+  const qbX=M+(W-qbSz)/2, qbY=y+2;
   ctx.strokeStyle=pc; ctx.lineWidth=3;
   rr(qbX,qbY,qbSz,qbSz,14); ctx.stroke();
   ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
 
-  // Logo overlay on QR centre (22% of QS = 84px, square + rounded corners)
+  // Logo overlay — 22% of QS, square with rounded corners
   if (logoImg) {
     const os=Math.round(QS*0.22);
     const ox=qbX+qbPad+(QS-os)/2, oy=qbY+qbPad+(QS-os)/2;
-    ctx.fillStyle='#ffffff';
-    rr(ox-6,oy-6,os+12,os+12,8); ctx.fill();
-    ctx.save();
-    rr(ox,oy,os,os,6); ctx.clip();
-    ctx.drawImage(logoImg, ox, oy, os, os);
-    ctx.restore();
+    ctx.fillStyle='#ffffff'; rr(ox-5,oy-5,os+10,os+10,7); ctx.fill();
+    ctx.save(); rr(ox,oy,os,os,5); ctx.clip();
+    ctx.drawImage(logoImg,ox,oy,os,os); ctx.restore();
   }
-  y=qbY+qbSz+12;
+  y = qbY+qbSz+7;
 
   // ── UPI ID PILL ───────────────────────────────────────────────────
-  const pillH=36, pillW=W-80;
-  ctx.fillStyle=pc; rr(M+40,y,pillW,pillH,pillH/2); ctx.fill();
-  ctx.fillStyle='#ffffff'; ctx.font='bold 14px monospace'; ctx.textBaseline='middle';
+  const pillH=32, pillW=W-60;
+  ctx.fillStyle=pc; rr(M+30,y,pillW,pillH,pillH/2); ctx.fill();
+  ctx.fillStyle='#ffffff'; ctx.font='bold 13px monospace'; ctx.textBaseline='middle';
   let uid=upiId;
-  while(ctx.measureText(uid).width>pillW-28&&uid.length>6) uid=uid.slice(0,-1);
+  while(ctx.measureText(uid).width>pillW-24&&uid.length>6) uid=uid.slice(0,-1);
   if(uid!==upiId) uid+='…';
   ctx.fillText(uid, cx, y+pillH/2);
-  y+=pillH+8;
+  y += pillH+5;
 
   // ── ALL UPI APPS ACCEPTED ─────────────────────────────────────────
-  ctx.fillStyle='#555'; ctx.font='bold 10px sans-serif'; ctx.textBaseline='top';
+  ctx.fillStyle='#555'; ctx.font='bold 9px sans-serif'; ctx.textBaseline='top';
   ctx.fillText('ALL UPI APPS ACCEPTED', cx, y);
-  y+=16;
+  y += 13;
 
   // ── PAYMENT APP BADGES ────────────────────────────────────────────
   const apps=[{t:'G Pay',c:'#4285F4'},{t:'PhonePe',c:'#5f259f'},{t:'Paytm',c:'#00BAF2'}];
-  const bh=24, bg=10;
-  ctx.font='bold 12px sans-serif';
-  const totW=apps.reduce((s,a)=>s+ctx.measureText(a.t).width+22+bg,0)-bg;
+  const bh=20, bg=8;
+  ctx.font='bold 10px sans-serif';
+  const totW=apps.reduce((s,a)=>s+ctx.measureText(a.t).width+16+bg,0)-bg;
   let bx=cx-totW/2;
   apps.forEach(a=>{
-    const bw=ctx.measureText(a.t).width+22;
-    ctx.fillStyle=a.c+'20'; rr(bx,y,bw,bh,5); ctx.fill();
-    ctx.strokeStyle=a.c+'aa'; ctx.lineWidth=1; rr(bx,y,bw,bh,5); ctx.stroke();
+    const bw=ctx.measureText(a.t).width+16;
+    ctx.fillStyle=a.c+'1a'; rr(bx,y,bw,bh,4); ctx.fill();
+    ctx.strokeStyle=a.c+'99'; ctx.lineWidth=1; rr(bx,y,bw,bh,4); ctx.stroke();
     ctx.fillStyle=a.c; ctx.textBaseline='middle';
     ctx.fillText(a.t, bx+bw/2, y+bh/2);
     bx+=bw+bg;
   });
 
-  // ── FOOTER BAR ────────────────────────────────────────────────────
-  const footH=56, footY=M+H-footH;
+  // ── FOOTER ────────────────────────────────────────────────────────
+  const footH=44, footY=M+H-footH;
   ctx.fillStyle=pc;
   ctx.beginPath();
   ctx.moveTo(M,footY); ctx.lineTo(M+W,footY);
@@ -659,7 +657,7 @@ function buildUpiCard(qrEl, logoImg, data) {
   ctx.lineTo(M+20,M+H); ctx.quadraticCurveTo(M,M+H,M,M+H-20);
   ctx.closePath(); ctx.fill();
 
-  ctx.fillStyle='#ffffff'; ctx.font='bold 12px sans-serif'; ctx.textBaseline='middle';
+  ctx.fillStyle='#ffffff'; ctx.font='bold 10px sans-serif'; ctx.textBaseline='middle';
   ctx.fillText('🛡 SECURE  |  ⚡ FAST  |  👍 RELIABLE', cx, footY+footH/2);
 
   ctx.restore();
