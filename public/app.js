@@ -603,14 +603,14 @@ function buildUpiCard(qrEl, logoImg, data) {
   ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
 
-  // Logo overlay on QR centre (22% of QS = 84px, circular)
+  // Logo overlay on QR centre (22% of QS = 84px, square with rounded corners)
   if (logoImg) {
     const os=Math.round(QS*0.22);
     const ox=qbX+qbPad+(QS-os)/2, oy=qbY+qbPad+(QS-os)/2;
     ctx.fillStyle='#ffffff';
-    ctx.beginPath(); ctx.arc(ox+os/2,oy+os/2,os/2+7,0,Math.PI*2); ctx.fill();
+    rr(ox-6,oy-6,os+12,os+12,8); ctx.fill();
     ctx.save();
-    ctx.beginPath(); ctx.arc(ox+os/2,oy+os/2,os/2,0,Math.PI*2); ctx.clip();
+    rr(ox,oy,os,os,6); ctx.clip();
     ctx.drawImage(logoImg, ox, oy, os, os);
     ctx.restore();
   }
