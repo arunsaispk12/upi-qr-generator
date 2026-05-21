@@ -3,7 +3,7 @@ const QR_TYPES = {
   url: {
     label: 'Website', subtitle: 'Scan to Visit', centreLabelText: 'URL',
     defaultColor: '#1a73e8',
-    iconSvg: 'circle cx="12" cy="12" r="10"',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
     getLabel: d => d.url || 'Website',
     buildQrString: d => (d.url || '').trim(),
     validate: d => !d.url ? 'URL is required' : null,
@@ -11,7 +11,7 @@ const QR_TYPES = {
   whatsapp: {
     label: 'WhatsApp', subtitle: 'Scan to Chat', centreLabelText: 'WA',
     defaultColor: '#25D366',
-    iconSvg: null,
+    icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.886 9.884"/></svg>',
     getLabel: d => d.waPhone || 'WhatsApp',
     buildQrString: d => {
       const p = (d.waPhone || '').replace(/\D/g, '');
@@ -22,7 +22,7 @@ const QR_TYPES = {
   instagram: {
     label: 'Instagram', subtitle: 'Scan to Follow', centreLabelText: 'IG',
     defaultColor: '#E1306C',
-    iconSvg: null,
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>',
     getLabel: d => d.igUsername || 'Instagram',
     buildQrString: d => 'https://instagram.com/' + (d.igUsername || '').replace(/^@/, '').trim(),
     validate: d => !d.igUsername ? 'Username is required' : null,
@@ -30,7 +30,7 @@ const QR_TYPES = {
   google_review: {
     label: 'Google Review', subtitle: 'Leave a Review', centreLabelText: 'G',
     defaultColor: '#4285F4',
-    iconSvg: null,
+    icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>',
     getLabel: d => d.grPlaceId || 'Google Review',
     buildQrString: d => 'https://search.google.com/local/writereview?placeid=' + encodeURIComponent(d.grPlaceId || ''),
     validate: d => !d.grPlaceId ? 'Place ID is required' : null,
@@ -38,7 +38,7 @@ const QR_TYPES = {
   upi: {
     label: 'UPI Payment', subtitle: 'Scan to Pay', centreLabelText: 'UPI',
     defaultColor: '#7c3aed',
-    iconSvg: null,
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="5" x2="18" y2="5"/><line x1="6" y1="10" x2="18" y2="10"/><path d="M6 5h12a6 6 0 0 1 0 10H6"/><line x1="9" y1="20" x2="18" y2="10"/></svg>',
     getLabel: d => d.payeeName || d.upiId || 'UPI',
     buildQrString: d => {
       let s = 'upi://pay?pa=' + encodeURIComponent(d.upiId) + '&pn=' + encodeURIComponent(d.payeeName) + '&cu=INR';
@@ -51,7 +51,7 @@ const QR_TYPES = {
   wifi: {
     label: 'WiFi', subtitle: 'Scan to Connect', centreLabelText: 'WiFi',
     defaultColor: '#0ea5e9',
-    iconSvg: null,
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M10.54 16.1a6 6 0 0 1 2.92 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>',
     getLabel: d => d.wifiSsid || 'WiFi',
     buildQrString: d => {
       const esc = s => (s || '').replace(/([\\;,"':])/g, '\\$1');
@@ -59,17 +59,6 @@ const QR_TYPES = {
     },
     validate: d => !d.wifiSsid ? 'Network name is required' : null,
   },
-};
-
-/* ── SVG icon markup (static strings, not user input) ────────────── */
-/* Stored separately from QR_TYPES to avoid security hook false positives */
-const QR_TYPE_ICONS = {
-  url:          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
-  whatsapp:     '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.886 9.884"/></svg>',
-  instagram:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>',
-  google_review:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>',
-  upi:          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="5" x2="18" y2="5"/><line x1="6" y1="10" x2="18" y2="10"/><path d="M6 5h12a6 6 0 0 1 0 10H6"/><line x1="9" y1="20" x2="18" y2="10"/></svg>',
-  wifi:         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M10.54 16.1a6 6 0 0 1 2.92 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>',
 };
 
 /* ── State ──────────────────────────────────────────────────────── */
@@ -98,13 +87,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function injectTypeIcons() {
-  /* QR_TYPE_ICONS values are hardcoded static SVG strings defined in this
-     file — they are never derived from user input, so injection is safe. */
-  const parser = new DOMParser();
-  Object.entries(QR_TYPE_ICONS).forEach(([mode, svgStr]) => {
-    const el = $('icon-' + mode);
-    if (!el) return;
-    const doc = parser.parseFromString(svgStr, 'image/svg+xml');
+  /* icon values are hardcoded static SVG strings defined in QR_TYPES —
+     they are never derived from user input, so DOMParser injection is safe. */
+  Object.entries(QR_TYPES).forEach(([mode, def]) => {
+    const el = document.getElementById('icon-' + mode);
+    if (!el || !def.icon) return;
+    const doc = new DOMParser().parseFromString(def.icon, 'image/svg+xml');
     const svg = doc.documentElement;
     if (svg && svg.tagName === 'svg') el.appendChild(svg);
   });
@@ -362,7 +350,8 @@ function downloadSTL() {
 /* ── History ────────────────────────────────────────────────────── */
 const HISTORY_KEY = 'qrgen_history';
 
-function saveHistory(formData, pngBase64) {
+async function saveHistory(formData, pngBase64) {
+  const thumb   = await downsamplePng(pngBase64, 80);
   const entries = getHistory();
   const typeDef = QR_TYPES[formData.mode];
   entries.unshift({
@@ -370,14 +359,14 @@ function saveHistory(formData, pngBase64) {
     mode:      formData.mode,
     label:     typeDef ? typeDef.getLabel(formData) : formData.mode,
     formData,
-    thumb:     downsamplePng(pngBase64, 80),
+    thumb,
   });
   const trimmed = entries.slice(0, 5);
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
-  } catch (ex) {
+  } catch {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(
-      trimmed.map(e => Object.assign({}, e, { thumb: null }))
+      trimmed.map(e => ({ ...e, thumb: null }))
     ));
   }
   renderHistory();
@@ -465,14 +454,19 @@ function restoreHistory(idx) {
 }
 
 function downsamplePng(base64, size) {
-  try {
-    const img = new Image();
-    img.src   = 'data:image/png;base64,' + base64;
-    const c   = document.createElement('canvas');
-    c.width   = size; c.height = size;
-    c.getContext('2d').drawImage(img, 0, 0, size, size);
-    return c.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
-  } catch (ex) { return null; }
+  return new Promise(resolve => {
+    try {
+      const img = new Image();
+      const c   = document.createElement('canvas');
+      c.width = size; c.height = size;
+      img.onload = () => {
+        c.getContext('2d').drawImage(img, 0, 0, size, size);
+        resolve(c.toDataURL('image/png').replace(/^data:image\/png;base64,/, ''));
+      };
+      img.onerror = () => resolve(null);
+      img.src = 'data:image/png;base64,' + base64;
+    } catch { resolve(null); }
+  });
 }
 
 function timeAgo(ts) {
@@ -524,6 +518,7 @@ function buildCardCanvas(qrCanvas, data) {
 
 /* ── Client-side SCAD builder (standalone — needs library alongside) */
 function buildSCADClient(qrString, data) {
+  const scadStr = s => String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const baseLength    = data.baseLength    || 90;
   const baseWidth     = data.baseWidth     || 90;
   const baseThickness = data.baseThickness || 2;
@@ -545,13 +540,13 @@ function buildSCADClient(qrString, data) {
     '// Download from: https://github.com/xypwn/scadqr\n' +
     '// Use the server to get a self-contained file.\n\n' +
     'include <scadqr_library.scad>\n\n' +
-    'qr_string="' + qrString + '";\n' +
+    'qr_string="' + scadStr(qrString) + '";\n' +
     'base_length=' + baseLength + ';base_width=' + baseWidth + ';base_thickness=' + baseThickness + ';\n' +
     'qr_size=' + qrSize + ';qr_block_height=' + qrRaise + ';\n' +
     'apply_round_corner=' + roundedCorners + ';round_corner_radius=' + cornerRadius + ';\n' +
     'add_keyring_hole=' + keyringHole + ';keyring_hole_diameter=' + holeDiameter + ';\n' +
     'keyring_tab_diameter=' + tabDiameter + ';keyring_position=' + keyringPosition + ';\n' +
-    'show_centre_label=' + centreLabel + ';centre_label_text="' + centreLabelText + '";\n' +
+    'show_centre_label=' + centreLabel + ';centre_label_text="' + scadStr(centreLabelText) + '";\n' +
     'centre_badge_width=' + badgeWidth + ';centre_badge_height=' + badgeHeight + ';\n' +
     'centre_badge_thickness=0.4;centre_text_height=0.6;centre_text_size=' + textSize + ';\n' +
     'base_color=[1,1,1];qr_color=[0,0,0];label_color=[0,0,0];\n\n' +
