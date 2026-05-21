@@ -172,6 +172,15 @@
         </div>
       </div>
     </div>
+    <div class="field">
+      <label>Card Background</label>
+      <div class="color-wrap">
+        <input type="color" id="bgColor" value="#ffffff"
+          oninput="document.getElementById('bgColorText').value=this.value" />
+        <input type="text" id="bgColorText" value="#ffffff" maxlength="7"
+          oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value))document.getElementById('bgColor').value=this.value" />
+      </div>
+    </div>
 
     <div class="section-title">3D Plate Dimensions (mm)</div>
     <div class="row3">

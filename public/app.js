@@ -182,6 +182,7 @@ function getFormData() {
     brandName:    val('brandName'),
     primaryColor: val('primaryColor'),
     qrColor:      val('qrColor'),
+    bgColor:      val('bgColor') || '#ffffff',
     logoDataUrl:  state.logoDataUrl,
     logoType:     state.logoType,
     baseLength:     +val('baseLength')     || 90,
@@ -514,9 +515,22 @@ function timeAgo(ts) {
  */
 function buildUpiCard(qrEl, logoImg, data) {
   const pc        = /^#[0-9a-fA-F]{6}$/.test(data.primaryColor||'') ? data.primaryColor : '#0d2e8a';
+  const bgColor   = /^#[0-9a-fA-F]{6}$/.test(data.bgColor||'')      ? data.bgColor      : '#ffffff';
   const brandName = data.brandName || data.payeeName || 'Brand';
   const tagline   = (data.tagline  || '').trim();
   const upiId     = data.upiId || '';
+
+  // Derive readable colours for text/lines on top of bgColor
+  function luma(hex) {
+    const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+    return 0.299*r + 0.587*g + 0.114*b;
+  }
+  const bgDark   = luma(bgColor) < 160;
+  // Primary text colour: use brand colour on light bg, white on dark bg
+  const textCol  = bgDark ? '#ffffff' : pc;
+  // Subtle colour for secondary text / divider lines
+  const muteCol  = bgDark ? 'rgba(255,255,255,0.55)' : pc;
+  const divAlpha = bgDark ? 0.25 : 0.13;
 
   /* 5"×11" with logo (H=1100) / 5"×7" without logo (H=700) at 100px/in × 2× retina
    * Logo: 3.5" dominant (350px tall). QS=380 (3.8") QR. W=500 locked.
@@ -538,11 +552,11 @@ function buildUpiCard(qrEl, logoImg, data) {
     ctx.closePath();
   }
 
-  // Card: shadow then white fill
+  // Card: shadow then background fill
   ctx.shadowColor='rgba(0,0,0,0.22)'; ctx.shadowBlur=28; ctx.shadowOffsetY=8;
-  ctx.fillStyle='#ffffff'; rr(M,M,W,H,20); ctx.fill();
+  ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
   ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
-  ctx.fillStyle='#ffffff'; rr(M,M,W,H,20); ctx.fill();
+  ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
   ctx.save(); rr(M,M,W,H,20); ctx.clip();
 
   let y = M+22;
@@ -557,8 +571,8 @@ function buildUpiCard(qrEl, logoImg, data) {
   }
 
   // ── BRAND NAME ───────────────────────────────────────────────────
-  ctx.fillStyle=pc; ctx.textAlign='center'; ctx.textBaseline='top';
-  let fs = logoImg ? 32 : 32;
+  ctx.fillStyle=textCol; ctx.textAlign='center'; ctx.textBaseline='top';
+  let fs = 32;
   ctx.font=`900 ${fs}px sans-serif`;
   while(ctx.measureText(brandName.toUpperCase()).width>W-32&&fs>12){fs--;ctx.font=`900 ${fs}px sans-serif`;}
   ctx.fillText(brandName.toUpperCase(), cx, y);
@@ -570,14 +584,14 @@ function buildUpiCard(qrEl, logoImg, data) {
     ctx.font='12px sans-serif';
     const tW=ctx.measureText(tl).width;
     const ll=Math.max(0,(W-tW-48)/2-6);
-    ctx.globalAlpha=0.3; ctx.strokeStyle=pc; ctx.lineWidth=1;
+    ctx.globalAlpha=divAlpha*2; ctx.strokeStyle=textCol; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(M+16,y+8); ctx.lineTo(M+16+ll,y+8); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx+tW/2+6,y+8); ctx.lineTo(cx+tW/2+6+ll,y+8); ctx.stroke();
-    ctx.globalAlpha=0.6; ctx.fillStyle=pc;
+    ctx.globalAlpha=0.7; ctx.fillStyle=textCol;
     ctx.fillText(tl, cx, y+1);
     ctx.globalAlpha=1;
   } else {
-    ctx.strokeStyle=pc; ctx.lineWidth=1; ctx.globalAlpha=0.13;
+    ctx.strokeStyle=textCol; ctx.lineWidth=1; ctx.globalAlpha=divAlpha;
     ctx.beginPath(); ctx.moveTo(M+16,y+8); ctx.lineTo(M+W-16,y+8); ctx.stroke();
     ctx.globalAlpha=1;
   }
@@ -585,18 +599,18 @@ function buildUpiCard(qrEl, logoImg, data) {
 
   // ── SCAN & PAY with flanking lines ───────────────────────────────
   y += 12;
-  ctx.font='bold 16px sans-serif'; ctx.fillStyle=pc; ctx.textBaseline='top';
+  ctx.font='bold 16px sans-serif'; ctx.fillStyle=textCol; ctx.textBaseline='top';
   const spTxt='SCAN & PAY', spW=ctx.measureText(spTxt).width;
   const dl=Math.max(0,(W-spW-48)/2-6);
-  ctx.strokeStyle=pc; ctx.lineWidth=1.5;
+  ctx.strokeStyle=textCol; ctx.lineWidth=1.5;
   ctx.beginPath(); ctx.moveTo(M+16,y+10); ctx.lineTo(M+16+dl,y+10); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(cx+spW/2+6,y+10); ctx.lineTo(cx+spW/2+6+dl,y+10); ctx.stroke();
   ctx.fillText(spTxt, cx, y);
   y += 22;
 
   // ── VIA UPI ───────────────────────────────────────────────────────
-  ctx.font='12px sans-serif'; ctx.globalAlpha=0.5;
-  ctx.fillText('VIA UPI', cx, y); ctx.globalAlpha=1;
+  ctx.font='12px sans-serif'; ctx.fillStyle=muteCol; ctx.globalAlpha=1;
+  ctx.fillText('VIA UPI', cx, y);
   y += 16;
 
   // ── QR BOX — QS=380 (3.8"), 15mm quiet zone ───────────────────────
@@ -604,6 +618,7 @@ function buildUpiCard(qrEl, logoImg, data) {
   const qbX=M+(W-qbSz)/2, qbY=y+8;
   ctx.strokeStyle=pc; ctx.lineWidth=3;
   rr(qbX,qbY,qbSz,qbSz,14); ctx.stroke();
+  // QR always on white for scannability
   ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
 
@@ -628,7 +643,7 @@ function buildUpiCard(qrEl, logoImg, data) {
   y += pillH+10;
 
   // ── ALL UPI APPS ACCEPTED ─────────────────────────────────────────
-  ctx.fillStyle='#555'; ctx.font='bold 10px sans-serif'; ctx.textBaseline='top';
+  ctx.fillStyle=muteCol; ctx.font='bold 10px sans-serif'; ctx.textBaseline='top';
   ctx.fillText('ALL UPI APPS ACCEPTED', cx, y);
   y += 16;
 
