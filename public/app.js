@@ -518,8 +518,8 @@ function buildUpiCard(qrEl, logoImg, data) {
   const brandName = (data.brandName || data.payeeName || 'Brand').toUpperCase();
   const upiId = data.upiId || '';
 
-  // Canvas: 5"×7.2" at 100px/inch × 2x retina
-  const W=500, H=720, M=12, SC=2;
+  // Canvas: 5"×6.4" (no logo) or 5"×7.2" (with logo) at 100px/inch × 2x retina
+  const W=500, H=logoImg ? 720 : 640, M=12, SC=2;
   const out = document.createElement('canvas');
   out.width=(W+M*2)*SC; out.height=(H+M*2)*SC;
   const ctx=out.getContext('2d');
