@@ -3,6 +3,18 @@ const path     = require('path');
 const archiver = require('archiver');
 const { Writable } = require('stream');
 
+// Load library once at startup — fail fast if missing
+let scadqrLib;
+try {
+  scadqrLib = fs.readFileSync(
+    path.join(__dirname, '../scad/scadqr_library.scad'), 'utf8'
+  );
+} catch (e) {
+  throw new Error(`scad-builder: cannot read scadqr_library.scad — ${e.message}`);
+}
+
+const escapeSCADStr = (s) => String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
 function buildSCADString(opts) {
   const {
     qrString,
@@ -17,10 +29,6 @@ function buildSCADString(opts) {
 
   const textSize = Math.round(badgeHeight * 0.55 * 10) / 10;
   const now      = new Date().toISOString().slice(0, 10);
-
-  const scadqrLib = fs.readFileSync(
-    path.join(__dirname, '../scad/scadqr_library.scad'), 'utf8'
-  );
 
   const centreBlock = hasSvgLogo
     ? `
@@ -64,7 +72,7 @@ function buildSCADString(opts) {
 // Open in OpenSCAD > F6 > File > Export > STL
 // ============================================================
 
-qr_string            = "${qrString}";
+qr_string            = "${escapeSCADStr(qrString)}";
 base_length          = ${baseLength};
 base_width           = ${baseWidth};
 base_thickness       = ${baseThickness};
@@ -77,7 +85,7 @@ keyring_hole_diameter= ${holeDiameter};
 keyring_tab_diameter = ${tabDiameter};
 keyring_position     = ${keyringPosition};
 show_centre_label    = ${centreLabel};
-centre_label_text    = "${centreLabelText}";
+centre_label_text    = "${escapeSCADStr(centreLabelText)}";
 centre_badge_width   = ${badgeWidth};
 centre_badge_height  = ${badgeHeight};
 centre_badge_thickness = 0.4;
@@ -148,7 +156,10 @@ async function zipScadAndSvg(scadContent, svgContent, baseName) {
 async function buildSCAD(opts) {
   const { logoType, logoSvgContent, payeeName = 'qr' } = opts;
   const hasSvgLogo = logoType === 'svg' && !!logoSvgContent;
-  const safeName   = payeeName.replace(/\s+/g, '_').toLowerCase();
+  const safeName   = payeeName
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_-]/gi, '')
+    .toLowerCase() || 'qr';
 
   const scadContent = buildSCADString({ ...opts, hasSvgLogo });
 
