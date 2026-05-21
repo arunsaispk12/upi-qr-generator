@@ -1,117 +1,96 @@
-/**
- * image-generator.js — Generates a branded PNG QR card
- * Uses the `qrcode` npm package + `canvas` for server-side rendering.
- * Falls back gracefully to plain QR if canvas is unavailable.
- */
-
 const QRCode = require('qrcode');
 
-/**
- * Generate a branded QR card as a PNG Buffer.
- * @param {Object} opts
- * @param {string}  opts.upiString   - The upi://pay?... string to encode
- * @param {string}  opts.payeeName   - Payee name displayed on card
- * @param {string}  opts.upiId       - UPI ID displayed on card
- * @param {string}  [opts.brandName] - Brand/shop name (defaults to payeeName)
- * @param {string}  [opts.amount]    - Optional amount string
- * @param {string}  [opts.primaryColor='#7c3aed'] - Brand color hex
- * @param {string}  [opts.qrColor='#1a1a2e']      - QR dot color hex
- * @param {string}  [opts.centreText='']           - Text overlay in QR centre
- * @returns {Promise<Buffer>} PNG image buffer
- */
 async function generateQRCard(opts) {
   const {
     qrString,
-    upiString,
-    payeeName,
-    upiId,
-    brandName    = opts.payeeName || opts.brandName,
-    amount       = '',
-    primaryColor = '#7c3aed',
+    brandName    = 'Brand',
+    subtitle     = 'Scan QR Code',
+    primaryColor = '#1a1a2e',
     qrColor      = '#1a1a2e',
+    logoDataUrl  = null,
     centreText   = '',
+    badgeWidth   = 30,
+    badgeHeight  = 8,
   } = opts;
 
-  // Support both old (upiString) and new (qrString) API
-  const qrData = qrString || upiString;
-
-  // Generate raw QR as a data URL (works without canvas)
-  const qrDataURL = await QRCode.toDataURL(qrData, {
+  const qrDataURL = await QRCode.toDataURL(qrString, {
     errorCorrectionLevel: 'H',
-    width: 400,
-    margin: 1,
-    color: {
-      dark:  qrColor,
-      light: '#ffffff',
-    },
+    width: 400, margin: 1,
+    color: { dark: qrColor, light: '#ffffff' },
   });
 
-  // Try to use canvas for a branded card; fall back to raw QR
   try {
     const { createCanvas, loadImage } = require('canvas');
     const buffer = await buildBrandedCard({
       createCanvas, loadImage,
-      qrDataURL, payeeName, upiId, brandName, amount, primaryColor, centreText,
+      qrDataURL, brandName, subtitle, primaryColor,
+      logoDataUrl, centreText, badgeWidth, badgeHeight,
     });
     return { buffer, canvasMissing: false };
   } catch {
-    // canvas not installed — return plain QR PNG
     const base64 = qrDataURL.replace(/^data:image\/png;base64,/, '');
-    const buffer = Buffer.from(base64, 'base64');
-    return { buffer, canvasMissing: true };
+    return { buffer: Buffer.from(base64, 'base64'), canvasMissing: true };
   }
 }
 
-/** Internal: render the full branded card onto a canvas */
 async function buildBrandedCard({
   createCanvas, loadImage,
-  qrDataURL, payeeName, upiId, brandName, amount, primaryColor, centreText,
+  qrDataURL, brandName, subtitle, primaryColor,
+  logoDataUrl, centreText, badgeWidth, badgeHeight,
 }) {
-  const QS = 320;        // QR image size
-  const W  = 420;        // Card width
-  const HH = 72;         // Header height
-  const SC = 2;          // HiDPI scale
-  const hasAmt = amount && parseFloat(amount) > 0;
-  const H = HH + QS + (hasAmt ? 130 : 100);
+  const QS = 320, W = 420, HH = 72, SC = 2;
+  const H  = HH + QS + 110;
 
   const canvas = createCanvas(W * SC, H * SC);
-  const ctx = canvas.getContext('2d');
+  const ctx    = canvas.getContext('2d');
   ctx.scale(SC, SC);
 
   const onColor = luminance(primaryColor) > 150 ? '#1a1a2e' : '#ffffff';
 
-  // White rounded card background
+  // Drop shadow behind card
+  ctx.shadowColor   = 'rgba(0,0,0,0.18)';
+  ctx.shadowBlur    = 24;
+  ctx.shadowOffsetY = 6;
   ctx.fillStyle = '#ffffff';
   roundRect(ctx, 0, 0, W, H, 16);
   ctx.fill();
 
-  // Coloured header bar
+  // Turn off shadow for everything inside
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+
+  // Coloured header
   ctx.fillStyle = primaryColor;
   roundRectTop(ctx, 0, 0, W, HH, 16);
   ctx.fill();
 
-  // Header: brand initial circle
+  // Logo or letter-avatar in header
   const AV = 40, ax = 16, ay = (HH - AV) / 2;
-  ctx.fillStyle = 'rgba(255,255,255,0.22)';
-  ctx.beginPath();
-  ctx.arc(ax + AV/2, ay + AV/2, AV/2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = onColor;
-  ctx.font      = `bold 18px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(brandName.charAt(0).toUpperCase(), ax + AV/2, ay + AV/2);
+  if (logoDataUrl) {
+    try {
+      const logoImg = await loadImage(logoDataUrl);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(ax + AV/2, ay + AV/2, AV/2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(logoImg, ax, ay, AV, AV);
+      ctx.restore();
+    } catch {
+      drawLetterAvatar(ctx, brandName, ax, ay, AV, onColor);
+    }
+  } else {
+    drawLetterAvatar(ctx, brandName, ax, ay, AV, onColor);
+  }
 
-  // Header: brand name + subtitle
+  // Brand name + subtitle
   const bx = ax + AV + 12;
-  ctx.fillStyle = onColor;
-  ctx.font      = 'bold 15px sans-serif';
-  ctx.textAlign = 'left';
+  ctx.fillStyle    = onColor;
+  ctx.font         = 'bold 15px sans-serif';
+  ctx.textAlign    = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(brandName, bx, 18);
   ctx.fillStyle = onColor + 'bb';
   ctx.font      = '11px sans-serif';
-  ctx.fillText('Scan to Pay · UPI', bx, 38);
+  ctx.fillText(subtitle, bx, 38);
 
   // QR image
   const qrImg = await loadImage(qrDataURL);
@@ -121,59 +100,63 @@ async function buildBrandedCard({
   ctx.fill();
   ctx.drawImage(qrImg, qx, qy, QS, QS);
 
-  // Centre label overlay
-  if (centreText && centreText.trim()) {
-    const bw = 70, bh = 22;
-    const lbx = qx + (QS - bw) / 2;
-    const lby = qy + (QS - bh) / 2;
+  // Centre overlay: logo thumbnail or text badge
+  // badgeWidth/badgeHeight are in mm (plate units); scale to pixel space proportionally
+  const bwPx = badgeWidth  * (QS / 90);
+  const bhPx = badgeHeight * (QS / 90);
+  const lbx  = qx + (QS - bwPx) / 2;
+  const lby  = qy + (QS - bhPx) / 2;
+
+  if (logoDataUrl) {
+    try {
+      const logoImg = await loadImage(logoDataUrl);
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      roundRect(ctx, lbx - 2, lby - 2, bwPx + 4, bhPx + 4, 4);
+      ctx.fill();
+      roundRect(ctx, lbx, lby, bwPx, bhPx, 4);
+      ctx.clip();
+      ctx.drawImage(logoImg, lbx, lby, bwPx, bhPx);
+      ctx.restore();
+    } catch { /* logo render failed silently */ }
+  } else if (centreText && centreText.trim()) {
     ctx.fillStyle = '#ffffff';
-    roundRect(ctx, lbx, lby, bw, bh, 4);
+    roundRect(ctx, lbx, lby, bwPx, bhPx, 4);
     ctx.fill();
-    ctx.fillStyle = primaryColor;
-    ctx.font = `bold 11px sans-serif`;
-    ctx.textAlign = 'center';
+    ctx.fillStyle    = primaryColor;
+    ctx.font         = `bold ${Math.max(8, bhPx * 0.55)}px sans-serif`;
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(centreText.toUpperCase(), qx + QS/2, qy + QS/2);
   }
 
-  // Info section
+  // Footer info
   const iy = qy + QS + 16;
   ctx.fillStyle    = '#1a1a2e';
   ctx.font         = 'bold 16px sans-serif';
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'top';
-  ctx.fillText(payeeName, W/2, iy);
+  ctx.fillText(brandName, W/2, iy);
 
-  ctx.fillStyle = '#999999';
-  ctx.font      = '11px sans-serif';
-  ctx.fillText(upiId, W/2, iy + 22);
-
-  if (hasAmt) {
-    const atxt = '₹ ' + parseFloat(amount).toLocaleString('en-IN', {
-      minimumFractionDigits: 2, maximumFractionDigits: 2,
-    });
-    ctx.font = 'bold 12px sans-serif';
-    const pw  = ctx.measureText(atxt).width + 28;
-    const px  = W/2 - pw/2, py = iy + 48;
-    ctx.fillStyle = primaryColor;
-    roundRect(ctx, px, py, pw, 24, 12);
-    ctx.fill();
-    ctx.fillStyle    = onColor;
-    ctx.textBaseline = 'middle';
-    ctx.fillText(atxt, W/2, py + 12);
-    ctx.textBaseline = 'top';
-  }
-
-  // Footer
   ctx.fillStyle    = '#cccccc';
   ctx.font         = '9px sans-serif';
   ctx.textBaseline = 'bottom';
-  ctx.fillText('● UPI · Instant & Secure Payment', W/2, H - 8);
+  ctx.fillText('Powered by QR Generator', W/2, H - 8);
 
   return canvas.toBuffer('image/png');
 }
 
-// ---- Canvas helpers -------------------------------------------------
+function drawLetterAvatar(ctx, name, ax, ay, AV, onColor) {
+  ctx.fillStyle = 'rgba(255,255,255,0.22)';
+  ctx.beginPath();
+  ctx.arc(ax + AV/2, ay + AV/2, AV/2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle    = onColor;
+  ctx.font         = 'bold 18px sans-serif';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText((name || '?').charAt(0).toUpperCase(), ax + AV/2, ay + AV/2);
+}
 
 function luminance(hex) {
   const r = parseInt(hex.slice(1,3),16);
