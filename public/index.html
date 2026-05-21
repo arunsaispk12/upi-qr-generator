@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QR Generator — Branded + 3D Print</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="header">
+  <h1>QR Generator</h1>
+  <p>Branded QR code - PNG image + OpenSCAD 3D print file</p>
+</header>
+
+<main class="main">
+
+  <aside class="sidebar">
+
+    <div class="section-title">QR Type</div>
+    <div class="type-grid" id="typeGrid">
+      <button class="type-card active" data-mode="url"           onclick="selectMode('url',this)">
+        <span class="type-icon" id="icon-url"></span><span>Website</span>
+      </button>
+      <button class="type-card" data-mode="whatsapp"     onclick="selectMode('whatsapp',this)">
+        <span class="type-icon" id="icon-whatsapp"></span><span>WhatsApp</span>
+      </button>
+      <button class="type-card" data-mode="instagram"    onclick="selectMode('instagram',this)">
+        <span class="type-icon" id="icon-instagram"></span><span>Instagram</span>
+      </button>
+      <button class="type-card" data-mode="google_review" onclick="selectMode('google_review',this)">
+        <span class="type-icon" id="icon-google_review"></span><span>Google Review</span>
+      </button>
+      <button class="type-card" data-mode="upi"          onclick="selectMode('upi',this)">
+        <span class="type-icon" id="icon-upi"></span><span>UPI Pay</span>
+      </button>
+      <button class="type-card" data-mode="wifi"         onclick="selectMode('wifi',this)">
+        <span class="type-icon" id="icon-wifi"></span><span>WiFi</span>
+      </button>
+    </div>
+
+    <div id="fields-url" class="mode-fields">
+      <div class="field">
+        <label>Website URL *</label>
+        <input type="url" id="url" placeholder="https://yourwebsite.com" />
+      </div>
+    </div>
+
+    <div id="fields-whatsapp" class="mode-fields hidden">
+      <div class="field">
+        <label>Phone Number * (with country code, digits only)</label>
+        <input type="tel" id="waPhone" placeholder="919876543210" />
+      </div>
+      <div class="field">
+        <label>Pre-filled Message (optional)</label>
+        <input type="text" id="waMessage" placeholder="Hello! I would like to enquire..." />
+      </div>
+    </div>
+
+    <div id="fields-instagram" class="mode-fields hidden">
+      <div class="field">
+        <label>Instagram Username *</label>
+        <input type="text" id="igUsername" placeholder="@yourbrand" />
+      </div>
+    </div>
+
+    <div id="fields-google_review" class="mode-fields hidden">
+      <div class="field">
+        <label>Google Place ID *
+          <a class="help-link"
+             href="https://developers.google.com/maps/documentation/places/web-service/place-id"
+             target="_blank" rel="noopener">How to find?</a>
+        </label>
+        <input type="text" id="grPlaceId" placeholder="ChIJN1t_tDeuEmsRUsoyG83frY4" />
+      </div>
+    </div>
+
+    <div id="fields-upi" class="mode-fields hidden">
+      <div class="field">
+        <label>UPI ID *</label>
+        <input type="text" id="upiId" placeholder="name@upi or 9876543210@paytm" />
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Payee Name *</label>
+          <input type="text" id="payeeName" placeholder="Your Shop" />
+        </div>
+        <div class="field">
+          <label>Amount (optional)</label>
+          <input type="number" id="amount" placeholder="0.00" min="0" step="0.01" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Note (optional)</label>
+        <input type="text" id="note" placeholder="Payment for..." />
+      </div>
+    </div>
+
+    <div id="fields-wifi" class="mode-fields hidden">
+      <div class="field">
+        <label>Network Name (SSID) *</label>
+        <input type="text" id="wifiSsid" placeholder="MyHomeNetwork" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="text" id="wifiPassword" placeholder="Leave blank for open network" />
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Security</label>
+          <select id="wifiSecurity">
+            <option value="WPA">WPA/WPA2</option>
+            <option value="WEP">WEP</option>
+            <option value="nopass">None (open)</option>
+          </select>
+        </div>
+        <div class="field" style="display:flex;align-items:center;gap:8px;padding-top:20px;">
+          <input type="checkbox" id="wifiHidden" style="width:auto;" />
+          <label style="margin:0;cursor:pointer;" for="wifiHidden">Hidden network</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">Branding</div>
+
+    <div class="field">
+      <label>Brand / Display Name</label>
+      <input type="text" id="brandName" placeholder="Auto-filled from type fields" />
+    </div>
+
+    <div class="field">
+      <label>
+        Logo (PNG, JPG or SVG - max 2 MB)
+        <span class="muted-note" id="svgNote" style="display:none;"> SVG enables 3D logo extrusion</span>
+      </label>
+      <div class="logo-upload-row">
+        <label class="logo-upload-btn" for="logoFile">Upload logo</label>
+        <input type="file" id="logoFile"
+               accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml"
+               style="display:none" onchange="handleLogoUpload(this)" />
+        <button class="logo-clear-btn" id="logoClear"
+                onclick="clearLogo()" style="display:none;">Remove</button>
+      </div>
+      <div class="logo-preview-wrap" id="logoPreviewWrap" style="display:none;">
+        <img id="logoPreview" src="" alt="logo preview" />
+      </div>
+    </div>
+
+    <div class="row2">
+      <div class="field">
+        <label>Header Color</label>
+        <div class="color-wrap">
+          <input type="color" id="primaryColor" value="#1a73e8"
+            oninput="document.getElementById('primaryColorText').value=this.value" />
+          <input type="text" id="primaryColorText" value="#1a73e8" maxlength="7"
+            oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value))document.getElementById('primaryColor').value=this.value" />
+        </div>
+      </div>
+      <div class="field">
+        <label>QR Dot Color</label>
+        <div class="color-wrap">
+          <input type="color" id="qrColor" value="#1a1a2e"
+            oninput="document.getElementById('qrColorText').value=this.value" />
+          <input type="text" id="qrColorText" value="#1a1a2e" maxlength="7"
+            oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value))document.getElementById('qrColor').value=this.value" />
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">Plate Dimensions (mm)</div>
+    <div class="row3">
+      <div class="field"><label>Width</label><input type="number" id="baseLength" value="90" min="30" max="300" /></div>
+      <div class="field"><label>Height</label><input type="number" id="baseWidth" value="90" min="30" max="300" /></div>
+      <div class="field"><label>QR Size</label><input type="number" id="qrSize" value="70" min="20" max="250" /></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Base Thickness</label><input type="number" id="baseThickness" value="2" min="0.5" max="10" step="0.5" /></div>
+      <div class="field"><label>QR Raise Height</label><input type="number" id="qrRaise" value="0.8" min="0.2" max="5" step="0.1" /></div>
+    </div>
+
+    <div class="section-title">Options</div>
+    <div class="toggle-row">
+      <span>Rounded corners</span>
+      <button class="toggle" id="t-rounded" onclick="tog('t-rounded','v-rounded')"></button>
+    </div>
+    <div id="v-rounded" class="sub-panel hidden">
+      <div class="field"><label>Corner Radius (mm)</label><input type="number" id="cornerRadius" value="4" min="1" max="20" /></div>
+    </div>
+    <div class="toggle-row">
+      <span>Keyring hole</span>
+      <button class="toggle" id="t-keyring" onclick="tog('t-keyring','v-keyring')"></button>
+    </div>
+    <div id="v-keyring" class="sub-panel hidden">
+      <div class="row2">
+        <div class="field"><label>Hole Diameter (mm)</label><input type="number" id="holeDiameter" value="5" min="2" max="15" step="0.5" /></div>
+        <div class="field"><label>Tab Diameter (mm)</label><input type="number" id="tabDiameter" value="12" min="5" max="25" step="0.5" /></div>
+      </div>
+      <div class="field">
+        <label>Position</label>
+        <select id="keyringPosition">
+          <option value="0">Top</option><option value="1">Right</option>
+          <option value="2">Bottom</option><option value="3">Left</option>
+        </select>
+      </div>
+    </div>
+    <div class="toggle-row">
+      <span>Centre label text</span>
+      <button class="toggle on" id="t-label" onclick="tog('t-label','v-label')"></button>
+    </div>
+    <div id="v-label" class="sub-panel">
+      <div class="field"><label>Label text</label><input type="text" id="centreLabelText" value="QR" maxlength="12" /></div>
+      <div class="row2">
+        <div class="field"><label>Badge Width</label><input type="number" id="badgeWidth" value="30" min="10" max="80" /></div>
+        <div class="field"><label>Badge Height</label><input type="number" id="badgeHeight" value="8" min="4" max="30" /></div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-full" id="generateBtn" onclick="generate()">Generate QR</button>
+    <div class="status-msg" id="statusMsg"></div>
+
+  </aside>
+
+  <section class="content">
+
+    <div class="info-box">
+      <strong>How it works</strong>
+      Choose a type, fill in details, click Generate.
+      Download <strong>.scad</strong> for 3D printing or <strong>PNG</strong> for sharing.
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('preview',this)">Preview</button>
+      <button class="tab" onclick="switchTab('howto',this)">Print Guide</button>
+    </div>
+
+    <div id="tab-preview" class="tab-panel">
+      <div class="preview-card">
+        <div class="preview-label">QR Card Preview</div>
+        <div class="qr-display" id="qrDisplay">
+          <div class="empty-state">Choose a type and click Generate</div>
+        </div>
+        <div id="saveHint" class="save-hint hidden">
+          Long-press to save on mobile - Right-click then Save image as on desktop
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-howto" class="tab-panel hidden">
+      <div class="preview-card">
+        <div class="preview-label">3D Printing Guide</div>
+        <div class="how-list">
+          <div class="how-step"><span class="step-n">1</span><div><strong>Download .scad file</strong>Click Download .scad after generating. If you uploaded an SVG logo you get a .zip — extract both files first.</div></div>
+          <div class="how-step"><span class="step-n">2</span><div><strong>Open in OpenSCAD</strong>Free at <a href="https://openscad.org" target="_blank" rel="noopener">openscad.org</a>. Open the .scad file.</div></div>
+          <div class="how-step"><span class="step-n">3</span><div><strong>Render</strong>Press <kbd>F6</kbd>. May take 1-2 minutes.</div></div>
+          <div class="how-step"><span class="step-n">4</span><div><strong>Export STL</strong>File then Export then Export as STL.</div></div>
+          <div class="how-step"><span class="step-n">5</span><div><strong>Slice and print</strong>Layer height 0.15mm, no supports needed.</div></div>
+          <div class="how-step"><span class="step-n">tip</span><div><strong>Two-colour tip</strong>Print base in white up to <code>base_thickness</code> mm, pause and swap to black for raised QR modules.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="export-panel">
+      <div class="preview-label">Export</div>
+      <div class="export-grid">
+        <div class="export-card">
+          <div class="export-icon">3D</div>
+          <div class="export-title">OpenSCAD File</div>
+          <div class="export-desc" id="scadDesc">Parametric 3D model - render in OpenSCAD - export STL - print.</div>
+          <button class="btn btn-cyan btn-full" id="btnScad" onclick="downloadSCAD()" disabled>Download .scad</button>
+        </div>
+        <div class="export-card">
+          <div class="export-icon">IMG</div>
+          <div class="export-title">PNG Image</div>
+          <div class="export-desc">Branded QR card for digital sharing.</div>
+          <button class="btn btn-green btn-full" id="btnPng" onclick="downloadPNG()" disabled>Save PNG</button>
+        </div>
+        <div class="export-card" id="stlCard" style="display:none;">
+          <div class="export-icon">STL</div>
+          <div class="export-title">STL File</div>
+          <div class="export-desc">Direct STL via OpenSCAD (detected on this server).</div>
+          <button class="btn btn-primary btn-full" id="btnStl" onclick="downloadSTL()" disabled>Export STL</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="history-panel" id="historyPanel" style="display:none;">
+      <div class="history-header">
+        <div class="preview-label">Recent</div>
+        <button class="history-clear" onclick="clearHistory()">Clear all</button>
+      </div>
+      <div class="history-grid" id="historyGrid"></div>
+    </div>
+
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
