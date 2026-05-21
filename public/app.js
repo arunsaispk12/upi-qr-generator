@@ -552,6 +552,100 @@ function buildUpiCard(qrEl, logoImg, data) {
     ctx.closePath();
   }
 
+  /* ── Payment app logo badge drawers ──────────────────────────────── */
+  function drawGPayBadge(bx,by,bw,bh){
+    // badge bg
+    ctx.fillStyle='#ffffff'; ctx.strokeStyle='#dadce0'; ctx.lineWidth=0.8;
+    rr(bx,by,bw,bh,6); ctx.fill(); rr(bx,by,bw,bh,6); ctx.stroke();
+    const p=5, gs=bh-p*2, r=gs*0.40, gcx=bx+p+gs/2, gcy=by+bh/2, lwd=r*0.34;
+    ctx.save(); ctx.lineWidth=lwd; ctx.lineCap='butt';
+    const gap=-0.30; // break angle for crossbar (near 3-o'clock)
+    // 4-colour Google G arcs (all counterclockwise = true)
+    const arcs=[[gap,-Math.PI*0.55,'#4285F4'],[-Math.PI*0.55,Math.PI*0.65,'#EA4335'],
+                [Math.PI*0.65,Math.PI*0.25,'#FBBC04'],[Math.PI*0.25,gap,'#34A853']];
+    arcs.forEach(([s,e,c])=>{
+      ctx.beginPath(); ctx.arc(gcx,gcy,r,s,e,true); ctx.strokeStyle=c; ctx.stroke();
+    });
+    // horizontal crossbar (blue) from centre to right edge, then short downstroke
+    ctx.strokeStyle='#4285F4';
+    ctx.beginPath(); ctx.moveTo(gcx,gcy); ctx.lineTo(gcx+r,gcy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(gcx+r,gcy); ctx.lineTo(gcx+r,gcy+r*0.42); ctx.stroke();
+    ctx.restore();
+    // "Pay" label
+    ctx.fillStyle='#202124'; ctx.font=`500 ${Math.round(bh*0.40)}px sans-serif`;
+    ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillText('Pay', gcx+r+lwd*0.5+4, gcy+1);
+  }
+
+  function drawPhonePeBadge(bx,by,bw,bh){
+    ctx.fillStyle='#f4eefa'; ctx.strokeStyle='#c8aee8'; ctx.lineWidth=0.8;
+    rr(bx,by,bw,bh,6); ctx.fill(); rr(bx,by,bw,bh,6); ctx.stroke();
+    const p=5, r=(bh-p*2)*0.50, ccx=bx+p+r, ccy=by+bh/2;
+    // Purple filled circle
+    ctx.beginPath(); ctx.arc(ccx,ccy,r,0,Math.PI*2);
+    ctx.fillStyle='#5f259f'; ctx.fill();
+    // White stylised "Pe" mark inside
+    ctx.fillStyle='#ffffff'; ctx.font=`900 ${Math.round(r*1.05)}px sans-serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('Pe',ccx,ccy+1);
+    // "PhonePe" text
+    ctx.fillStyle='#5f259f'; ctx.font=`700 ${Math.round(bh*0.36)}px sans-serif`;
+    ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillText('PhonePe',ccx+r+5,ccy+1);
+  }
+
+  function drawPaytmBadge(bx,by,bw,bh){
+    ctx.fillStyle='#e5f7fd'; ctx.strokeStyle='#80d8f0'; ctx.lineWidth=0.8;
+    rr(bx,by,bw,bh,6); ctx.fill(); rr(bx,by,bw,bh,6); ctx.stroke();
+    ctx.fillStyle='#002970'; ctx.font=`900 ${Math.round(bh*0.43)}px sans-serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('Pay',bx+bw*0.38,by+bh/2+1);
+    ctx.fillStyle='#00BAF2';
+    ctx.fillText('tm',bx+bw*0.72,by+bh/2+1);
+  }
+
+  /* ── Trust-signal icon drawers (footer) ─────────────────────────── */
+  function iconShield(ix,iy,is,col){
+    ctx.save(); ctx.strokeStyle=col; ctx.lineWidth=1.6; ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(ix+is*.50,iy);
+    ctx.lineTo(ix+is*.95,iy+is*.26); ctx.lineTo(ix+is*.95,iy+is*.58);
+    ctx.bezierCurveTo(ix+is*.95,iy+is*.82,ix+is*.50,iy+is,ix+is*.50,iy+is);
+    ctx.bezierCurveTo(ix+is*.05,iy+is*.82,ix+is*.05,iy+is*.58,ix+is*.05,iy+is*.58);
+    ctx.lineTo(ix+is*.05,iy+is*.26); ctx.closePath(); ctx.stroke();
+    // checkmark
+    ctx.beginPath();
+    ctx.moveTo(ix+is*.30,iy+is*.52); ctx.lineTo(ix+is*.46,iy+is*.68); ctx.lineTo(ix+is*.72,iy+is*.38);
+    ctx.stroke(); ctx.restore();
+  }
+  function iconBolt(ix,iy,is,col){
+    ctx.save(); ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.moveTo(ix+is*.60,iy);    ctx.lineTo(ix+is*.26,iy+is*.50);
+    ctx.lineTo(ix+is*.48,iy+is*.50); ctx.lineTo(ix+is*.38,iy+is);
+    ctx.lineTo(ix+is*.74,iy+is*.50); ctx.lineTo(ix+is*.52,iy+is*.50);
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+  function iconThumb(ix,iy,is,col){
+    ctx.save(); ctx.strokeStyle=col; ctx.lineWidth=1.6; ctx.lineJoin='round'; ctx.lineCap='round';
+    // thumb up outline
+    ctx.beginPath();
+    ctx.moveTo(ix+is*.10,iy+is*.46); ctx.lineTo(ix+is*.10,iy+is*.96);
+    ctx.lineTo(ix+is*.38,iy+is*.96); ctx.lineTo(ix+is*.38,iy+is*.46);
+    // thumb digit curves up
+    ctx.lineTo(ix+is*.38,iy+is*.30);
+    ctx.arc(ix+is*.55,iy+is*.18,is*.20, Math.PI, 0, false);
+    ctx.lineTo(ix+is*.75,iy+is*.46);
+    ctx.lineTo(ix+is*.94,iy+is*.46); ctx.lineTo(ix+is*.94,iy+is*.92);
+    ctx.lineTo(ix+is*.38,iy+is*.92);
+    ctx.stroke();
+    // knuckle lines
+    ctx.globalAlpha=0.5;
+    [.60,.72,.84].forEach(t=>{
+      ctx.beginPath();ctx.moveTo(ix+is*.38,iy+is*t);ctx.lineTo(ix+is*.94,iy+is*t);ctx.stroke();
+    });
+    ctx.restore();
+  }
+
   // Card: shadow then background fill
   ctx.shadowColor='rgba(0,0,0,0.22)'; ctx.shadowBlur=28; ctx.shadowOffsetY=8;
   ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
@@ -635,7 +729,7 @@ function buildUpiCard(qrEl, logoImg, data) {
   // ── UPI ID PILL ───────────────────────────────────────────────────
   const pillH=36, pillW=W-60;
   ctx.fillStyle=pc; rr(M+30,y,pillW,pillH,pillH/2); ctx.fill();
-  ctx.fillStyle='#ffffff'; ctx.font='bold 14px monospace'; ctx.textBaseline='middle';
+  ctx.fillStyle='#ffffff'; ctx.font='900 16px monospace'; ctx.textBaseline='middle';
   let uid=upiId;
   while(ctx.measureText(uid).width>pillW-28&&uid.length>6) uid=uid.slice(0,-1);
   if(uid!==upiId) uid+='…';
@@ -647,20 +741,25 @@ function buildUpiCard(qrEl, logoImg, data) {
   ctx.fillText('ALL UPI APPS ACCEPTED', cx, y);
   y += 16;
 
-  // ── PAYMENT APP BADGES ────────────────────────────────────────────
-  const apps=[{t:'G Pay',c:'#4285F4'},{t:'PhonePe',c:'#5f259f'},{t:'Paytm',c:'#00BAF2'}];
-  const bh=24, bg=12;
-  ctx.font='bold 11px sans-serif';
-  const totW=apps.reduce((s,a)=>s+ctx.measureText(a.t).width+20+bg,0)-bg;
-  let bx=cx-totW/2;
-  apps.forEach(a=>{
-    const bw=ctx.measureText(a.t).width+20;
-    ctx.fillStyle=a.c+'1a'; rr(bx,y,bw,bh,5); ctx.fill();
-    ctx.strokeStyle=a.c+'99'; ctx.lineWidth=1; rr(bx,y,bw,bh,5); ctx.stroke();
-    ctx.fillStyle=a.c; ctx.textBaseline='middle';
-    ctx.fillText(a.t, bx+bw/2, y+bh/2);
-    bx+=bw+bg;
-  });
+  // ── PAYMENT APP LOGOS (G Pay · PhonePe · Paytm) ──────────────────
+  {
+    const bh=34, gap=10;
+    // Measure badge widths dynamically
+    const p=5, gs=bh-p*2, r=gs*0.40, lwd=r*0.34;
+    ctx.font=`500 ${Math.round(bh*0.40)}px sans-serif`;
+    const gpW = Math.ceil(p+gs + lwd*0.5+4 + ctx.measureText('Pay').width + p);
+    const pp_r=(bh-p*2)*0.50;
+    ctx.font=`700 ${Math.round(bh*0.36)}px sans-serif`;
+    const phoneW = Math.ceil(p+pp_r*2+5 + ctx.measureText('PhonePe').width + p*2);
+    ctx.font=`900 ${Math.round(bh*0.43)}px sans-serif`;
+    const ptW = Math.ceil(ctx.measureText('Paytm').width + p*4);
+    const totalBW = gpW + phoneW + ptW + gap*2;
+    let bx = cx - totalBW/2;
+    drawGPayBadge(bx, y, gpW, bh);   bx += gpW   + gap;
+    drawPhonePeBadge(bx, y, phoneW, bh); bx += phoneW + gap;
+    drawPaytmBadge(bx, y, ptW, bh);
+    y += bh;
+  }
 
   // ── FOOTER ────────────────────────────────────────────────────────
   const footH=56, footY=M+H-footH;
@@ -671,8 +770,34 @@ function buildUpiCard(qrEl, logoImg, data) {
   ctx.lineTo(M+20,M+H); ctx.quadraticCurveTo(M,M+H,M,M+H-20);
   ctx.closePath(); ctx.fill();
 
-  ctx.fillStyle='#ffffff'; ctx.font='bold 11px sans-serif'; ctx.textBaseline='middle';
-  ctx.fillText('🛡 SECURE  |  ⚡ FAST  |  👍 RELIABLE', cx, footY+footH/2);
+  // Trust signals: icon + label, separated by |
+  {
+    const fcy = footY+footH/2, icSz=footH*0.40, icY=fcy-icSz/2;
+    const trustFont=`bold 11px sans-serif`;
+    ctx.font=trustFont;
+    const items=[
+      {label:'SECURE', draw:iconShield},
+      {label:'FAST',   draw:iconBolt},
+      {label:'RELIABLE',draw:iconThumb},
+    ];
+    const sep='  |  ';
+    const sepW=ctx.measureText(sep).width;
+    const itemWidths=items.map(it=>icSz+4+ctx.measureText(it.label).width);
+    const totalTW=itemWidths.reduce((s,w)=>s+w,0)+sepW*(items.length-1);
+    let tx=cx-totalTW/2;
+    ctx.fillStyle='#ffffff'; ctx.textBaseline='middle';
+    items.forEach((it,i)=>{
+      it.draw(tx,icY,icSz,'#ffffff');
+      ctx.font=trustFont; ctx.fillStyle='#ffffff';
+      ctx.textAlign='left';
+      ctx.fillText(it.label, tx+icSz+4, fcy);
+      tx+=itemWidths[i];
+      if(i<items.length-1){
+        ctx.globalAlpha=0.45; ctx.fillText(sep,tx,fcy); ctx.globalAlpha=1;
+        tx+=sepW;
+      }
+    });
+  }
 
   ctx.restore();
   return out.toDataURL('image/png');
