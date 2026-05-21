@@ -60,7 +60,7 @@ const QR_TYPES = {
     label: 'Google Review',
     defaultColor: '#4285F4',
     subtitle: 'Leave a Review',
-    centreLabelText: 'G*',
+    centreLabelText: 'G',
     buildQrString({ grPlaceId }) {
       if (!grPlaceId) throw new Error('Place ID is required');
       return `https://search.google.com/local/writereview?placeid=${encodeURIComponent(grPlaceId.trim())}`;

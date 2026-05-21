@@ -163,7 +163,9 @@ app.post('/api/download/png', async (req, res) => {
     });
 
     const safeName = (req.body.payeeName || brandOpts.brandName || mode)
-      .replace(/\s+/g, '_').toLowerCase();
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9_-]/gi, '')
+      .toLowerCase() || 'qr';
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}_qr.png"`);
     res.send(pngResult.buffer);
@@ -185,6 +187,9 @@ app.post('/api/download/stl', async (req, res) => {
     const { mode = 'url' } = req.body;
     const typeDef = QR_TYPES[mode];
     if (!typeDef) return res.status(400).json({ error: 'Unknown mode: ' + mode });
+
+    const validationError = typeDef.validate(req.body);
+    if (validationError) return res.status(400).json({ error: validationError });
 
     const qrString  = typeDef.buildQrString(req.body);
     const plateOpts = extractPlateOpts(req.body);
@@ -217,7 +222,9 @@ app.post('/api/download/stl', async (req, res) => {
           return res.status(500).json({ error: 'OpenSCAD render failed: ' + err.message });
         }
         const safeName = (req.body.payeeName || brandOpts.brandName || mode)
-          .replace(/\s+/g, '_').toLowerCase();
+          .replace(/\s+/g, '_')
+          .replace(/[^a-z0-9_-]/gi, '')
+          .toLowerCase() || 'qr';
         res.setHeader('Content-Type', 'application/octet-stream');
         res.setHeader('Content-Disposition', `attachment; filename="${safeName}_qr.stl"`);
         const stream = fs.createReadStream(stlPath);
