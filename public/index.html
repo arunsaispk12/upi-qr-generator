@@ -3,14 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QR Generator — Branded + 3D Print</title>
+<title>UPI QR Card Generator — Print Wolves</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <header class="header">
-  <h1>QR Generator</h1>
-  <p>Branded QR code - PNG image + OpenSCAD 3D print file</p>
+  <h1>QR Card Generator</h1>
+  <span class="header-badge">Professional Print Quality</span>
+  <p>5" × 7" branded payment card · ECC-H · 15 mm quiet zone</p>
 </header>
 
 <main class="main">
@@ -18,6 +19,7 @@
   <aside class="sidebar">
 
     <div class="section-title">QR Type</div>
+
     <div class="type-grid" id="typeGrid">
       <button class="type-card active" data-mode="url"           onclick="selectMode('url',this)">
         <span class="type-icon" id="icon-url"></span><span>Website</span>
@@ -125,7 +127,7 @@
       </div>
     </div>
 
-    <div class="section-title">Branding</div>
+    <div class="section-title">Brand Identity</div>
 
     <div class="field">
       <label>Brand / Display Name</label>
@@ -152,7 +154,7 @@
 
     <div class="row2">
       <div class="field">
-        <label>Header Color</label>
+        <label>Brand Color</label>
         <div class="color-wrap">
           <input type="color" id="primaryColor" value="#1a73e8"
             oninput="document.getElementById('primaryColorText').value=this.value" />
@@ -171,7 +173,7 @@
       </div>
     </div>
 
-    <div class="section-title">Plate Dimensions (mm)</div>
+    <div class="section-title">3D Plate Dimensions (mm)</div>
     <div class="row3">
       <div class="field"><label>Width</label><input type="number" id="baseLength" value="90" min="30" max="300" /></div>
       <div class="field"><label>Height</label><input type="number" id="baseWidth" value="90" min="30" max="300" /></div>
@@ -228,8 +230,15 @@
 
     <div class="info-box">
       <strong>How it works</strong>
-      Choose a type, fill in details, click Generate.
-      Download <strong>.scad</strong> for 3D printing or <strong>PNG</strong> for sharing.
+      Choose a QR type, fill in your details &amp; branding, then click <strong>Generate QR</strong>.
+      Download the <strong>PNG</strong> for digital sharing or professional printing, or the <strong>.scad</strong> file for 3D printing a physical stand.
+    </div>
+
+    <div class="spec-row" id="specRow">
+      <div class="spec-badge">📐 <span>Card size</span> 5 × 7 in</div>
+      <div class="spec-badge">🔷 <span>QR</span> 3.8 in · ECC-H</div>
+      <div class="spec-badge">📏 <span>Quiet zone</span> 15 mm</div>
+      <div class="spec-badge">🖨 <span>Resolution</span> 200 DPI</div>
     </div>
 
     <div class="tabs">
