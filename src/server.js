@@ -109,6 +109,9 @@ app.post('/api/download/scad', async (req, res) => {
     const typeDef = QR_TYPES[mode];
     if (!typeDef) return res.status(400).json({ error: 'Unknown mode: ' + mode });
 
+    const validationError = typeDef.validate(req.body);
+    if (validationError) return res.status(400).json({ error: validationError });
+
     const qrString  = typeDef.buildQrString(req.body);
     const plateOpts = extractPlateOpts(req.body);
     const brandOpts = extractBrandOpts(req.body);
@@ -125,6 +128,7 @@ app.post('/api/download/scad', async (req, res) => {
     res.setHeader('Content-Type', scadResult.isZip ? 'application/zip' : 'text/plain');
     res.send(scadResult.content);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -134,6 +138,9 @@ app.post('/api/download/png', async (req, res) => {
     const { mode = 'url' } = req.body;
     const typeDef = QR_TYPES[mode];
     if (!typeDef) return res.status(400).json({ error: 'Unknown mode: ' + mode });
+
+    const validationError = typeDef.validate(req.body);
+    if (validationError) return res.status(400).json({ error: validationError });
 
     const qrString  = typeDef.buildQrString(req.body);
     const brandOpts = extractBrandOpts(req.body);
@@ -161,6 +168,7 @@ app.post('/api/download/png', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}_qr.png"`);
     res.send(pngResult.buffer);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -214,7 +222,11 @@ app.post('/api/download/stl', async (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename="${safeName}_qr.stl"`);
         const stream = fs.createReadStream(stlPath);
         stream.pipe(res);
-        stream.on('end', () => { try { fs.unlinkSync(stlPath); } catch {} });
+        stream.on('error', (streamErr) => {
+          try { fs.unlinkSync(stlPath); } catch {}
+          if (!res.headersSent) res.status(500).json({ error: 'Stream error: ' + streamErr.message });
+        });
+        stream.on('close', () => { try { fs.unlinkSync(stlPath); } catch {} });
       }
     );
   } catch (err) {
