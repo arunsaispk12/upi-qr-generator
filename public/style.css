@@ -285,9 +285,9 @@ html, body {
 }
 
 .qr-display {
-  background: #fff;
+  background: #eef0f5;
   border-radius: 10px;
-  padding: 12px;
+  padding: 16px;
   display: flex;
   align-items: center;
   justify-content: center;

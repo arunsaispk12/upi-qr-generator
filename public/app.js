@@ -222,25 +222,52 @@ async function generate() {
       throw new Error(e.error || 'Server error');
     }
     const result = await res.json();
-    state.pngBase64   = result.pngBase64;
     state.scadContent = result.scadFile;
     state.isZip       = result.isZip;
     state.filename    = result.filename || 'qr';
 
-    renderPreview('data:image/png;base64,' + result.pngBase64);
-    enableButtons();
-    saveHistory(data, result.pngBase64);
+    let displayPng = result.pngBase64;
+    if (result.canvasMissing) {
+      const cardDataUrl = await buildCardFromPlainQR('data:image/png;base64,' + result.pngBase64, data);
+      displayPng = cardDataUrl.replace(/^data:image\/png;base64,/, '');
+    }
+    state.pngBase64 = displayPng;
 
-    const msg = result.canvasMissing
-      ? 'QR generated (plain QR - run npm install canvas for branded card)'
-      : 'QR generated!';
-    showStatus(msg, 'ok');
+    renderPreview('data:image/png;base64,' + displayPng);
+    enableButtons();
+    saveHistory(data, displayPng);
+    showStatus('QR generated!', 'ok');
   } catch (e) {
     console.warn('API unavailable, using client-side mode:', e.message);
     await generateClientSide(data);
   } finally {
     $('generateBtn').disabled = false;
   }
+}
+
+async function buildCardFromPlainQR(qrDataUrl, data) {
+  const qrImg = await new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.src = qrDataUrl;
+  });
+  return buildFinalCard(qrImg, data);
+}
+
+async function buildFinalCard(qrElement, data) {
+  if (data.mode === 'upi') {
+    let logoImg = null;
+    if (data.logoDataUrl) {
+      logoImg = await new Promise(resolve => {
+        const img = new Image();
+        img.onload  = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = data.logoDataUrl;
+      });
+    }
+    return buildUpiCard(qrElement, logoImg, data);
+  }
+  return buildCardCanvas(qrElement, data);
 }
 
 /* ── Client-side fallback ───────────────────────────────────────── */
@@ -275,7 +302,7 @@ async function generateClientSide(data) {
     return;
   }
 
-  const pngDataURL = buildCardCanvas(qrCanvas, data);
+  const pngDataURL = await buildFinalCard(qrCanvas, data);
   document.body.removeChild(tmpDiv);
 
   state.pngBase64   = pngDataURL.replace(/^data:image\/png;base64,/, '');
@@ -477,42 +504,172 @@ function timeAgo(ts) {
   return Math.floor(s / 86400) + 'd ago';
 }
 
+/* ── UPI professional print card (5:7 portrait) ─────────────────── */
+function buildUpiCard(qrEl, logoImg, data) {
+  const pc = (data.primaryColor && /^#[0-9a-fA-F]{6}$/.test(data.primaryColor))
+    ? data.primaryColor : '#0d2e8a';
+  const brandName = (data.brandName || data.payeeName || 'Brand').toUpperCase();
+  const upiId = data.upiId || '';
+
+  const W=500, H=700, M=12, SC=2;
+  const out = document.createElement('canvas');
+  out.width = (W+M*2)*SC; out.height = (H+M*2)*SC;
+  const ctx = out.getContext('2d');
+  ctx.scale(SC, SC);
+  const cx = M+W/2;
+
+  function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();}
+
+  // Card drop shadow + white background
+  ctx.shadowColor='rgba(0,0,0,0.22)';ctx.shadowBlur=28;ctx.shadowOffsetY=8;
+  ctx.fillStyle='#ffffff';rr(M,M,W,H,20);ctx.fill();
+  ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+  ctx.fillStyle='#ffffff';rr(M,M,W,H,20);ctx.fill();
+
+  let y = M+18;
+
+  // ── LOGO ──────────────────────────────────────────────────────────
+  if (logoImg) {
+    const lw=100,lh=100;
+    ctx.drawImage(logoImg, cx-lw/2, y, lw, lh);
+    y += lh+10;
+  }
+
+  // ── BRAND NAME ────────────────────────────────────────────────────
+  ctx.fillStyle=pc; ctx.textAlign='center'; ctx.textBaseline='top';
+  let fs=26;
+  ctx.font=`bold ${fs}px sans-serif`;
+  while(ctx.measureText(brandName).width > W-60 && fs>13){ fs--; ctx.font=`bold ${fs}px sans-serif`; }
+  ctx.fillText(brandName, cx, y);
+  y += fs+10;
+
+  // ── SCAN & PAY with decorative lines ──────────────────────────────
+  ctx.font='bold 14px sans-serif';
+  const spW=ctx.measureText('SCAN & PAY').width;
+  const lx1=M+24, lx2=cx-spW/2-12, lx3=cx+spW/2+12, lx4=M+W-24, ly=y+9;
+  ctx.strokeStyle=pc; ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(lx1,ly);ctx.lineTo(lx2,ly);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(lx3,ly);ctx.lineTo(lx4,ly);ctx.stroke();
+  ctx.fillStyle=pc; ctx.fillText('SCAN & PAY', cx, y);
+  y+=20;
+
+  // ── VIA UPI ───────────────────────────────────────────────────────
+  ctx.globalAlpha=0.65; ctx.font='11px sans-serif'; ctx.fillText('VIA UPI',cx,y); ctx.globalAlpha=1;
+  y+=20;
+
+  // ── QR BOX ────────────────────────────────────────────────────────
+  const QS=268, qbPad=14, qbSz=QS+qbPad*2;
+  const qbX=M+(W-qbSz)/2, qbY=y+4;
+  ctx.strokeStyle=pc; ctx.lineWidth=3; rr(qbX,qbY,qbSz,qbSz,14); ctx.stroke();
+  ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
+  ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
+
+  // Logo overlay centred on QR
+  if (logoImg) {
+    const os=Math.round(QS*0.17), ox=qbX+qbPad+(QS-os)/2, oy=qbY+qbPad+(QS-os)/2;
+    ctx.fillStyle='#ffffff';
+    ctx.beginPath();ctx.arc(ox+os/2,oy+os/2,os/2+6,0,Math.PI*2);ctx.fill();
+    ctx.drawImage(logoImg,ox,oy,os,os);
+  }
+  y = qbY+qbSz+12;
+
+  // ── UPI ID PILL ───────────────────────────────────────────────────
+  const pillH=36, pillX=M+44, pillW=W-88;
+  ctx.fillStyle=pc; rr(pillX,y,pillW,pillH,pillH/2); ctx.fill();
+  ctx.fillStyle='#ffffff'; ctx.font='bold 13px sans-serif'; ctx.textBaseline='middle';
+  // Truncate UPI ID if too wide
+  let uid=upiId;
+  while(ctx.measureText(uid).width>pillW-24&&uid.length>6) uid=uid.slice(0,-1);
+  if(uid!==upiId) uid+='…';
+  ctx.fillText(uid, cx, y+pillH/2);
+  y+=pillH+8;
+
+  // ── ALL UPI APPS ACCEPTED ─────────────────────────────────────────
+  ctx.fillStyle='#666'; ctx.font='10px sans-serif'; ctx.textBaseline='top';
+  ctx.fillText('ALL UPI APPS ACCEPTED', cx, y);
+  y+=15;
+
+  // ── PAYMENT APP LOGOS (styled text badges) ────────────────────────
+  const apps=[
+    {label:'G Pay', color:'#4285F4'},
+    {label:'PhonePe', color:'#5f259f'},
+    {label:'Paytm', color:'#00BAF2'},
+  ];
+  const badgeH=22, badgeGap=10;
+  let totalBW=0;
+  apps.forEach(a=>{
+    ctx.font='bold 11px sans-serif';
+    totalBW+=ctx.measureText(a.label).width+20+badgeGap;
+  });
+  totalBW-=badgeGap;
+  let bx=cx-totalBW/2;
+  apps.forEach(a=>{
+    ctx.font='bold 11px sans-serif';
+    const bw=ctx.measureText(a.label).width+20;
+    ctx.fillStyle=a.color+'22'; rr(bx,y,bw,badgeH,4); ctx.fill();
+    ctx.strokeStyle=a.color; ctx.lineWidth=1; rr(bx,y,bw,badgeH,4); ctx.stroke();
+    ctx.fillStyle=a.color; ctx.textBaseline='middle';
+    ctx.fillText(a.label, bx+bw/2, y+badgeH/2);
+    bx+=bw+badgeGap;
+  });
+  ctx.textBaseline='top';
+
+  // ── FOOTER BAR (blue, rounded bottom matching card) ───────────────
+  const footH=50, footY=M+H-footH;
+  ctx.fillStyle=pc;
+  ctx.beginPath();
+  ctx.moveTo(M, footY);
+  ctx.lineTo(M+W, footY);
+  ctx.lineTo(M+W, M+H-20);
+  ctx.quadraticCurveTo(M+W, M+H, M+W-20, M+H);
+  ctx.lineTo(M+20, M+H);
+  ctx.quadraticCurveTo(M, M+H, M, M+H-20);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle='#ffffff'; ctx.font='bold 11px sans-serif'; ctx.textBaseline='middle';
+  ctx.fillText('🔒 SECURE  |  ⚡ FAST  |  ✅ RELIABLE', cx, footY+footH/2);
+
+  return out.toDataURL('image/png');
+}
+
 /* ── Client-side card renderer (standalone fallback) ────────────── */
 function buildCardCanvas(qrCanvas, data) {
   const primaryColor = data.primaryColor || '#1a73e8';
   const typeDef  = QR_TYPES[data.mode];
   const brandName = data.brandName || (typeDef ? typeDef.getLabel(data) : 'QR');
   const subtitle  = typeDef ? typeDef.subtitle : 'Scan QR Code';
-  const QS=280, W=380, HH=66, SC=2, H=HH+QS+95;
+  const QS=280, W=380, HH=66, SC=2, H=HH+QS+95, M=12;
   const out = document.createElement('canvas');
-  out.width = W*SC; out.height = H*SC;
+  out.width = (W+M*2)*SC; out.height = (H+M*2)*SC;
   const ctx = out.getContext('2d');
   ctx.scale(SC, SC);
   const lum = function(hex) {
+    if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return 128;
     const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
     return .299*r+.587*g+.114*b;
   };
   const onColor = lum(primaryColor) > 150 ? '#1a1a2e' : '#ffffff';
   function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();}
   function rrTop(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h);ctx.lineTo(x,y+h);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();}
-  ctx.shadowColor='rgba(0,0,0,0.15)';ctx.shadowBlur=16;ctx.shadowOffsetY=4;
-  ctx.fillStyle='#ffffff';rr(0,0,W,H,14);ctx.fill();
+  ctx.shadowColor='rgba(0,0,0,0.18)';ctx.shadowBlur=20;ctx.shadowOffsetY=6;
+  ctx.fillStyle='#ffffff';rr(M,M,W,H,14);ctx.fill();
   ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0;
-  ctx.fillStyle=primaryColor;rrTop(0,0,W,HH,14);ctx.fill();
-  const AV=38,ax=14,ay=(HH-AV)/2;
+  ctx.fillStyle=primaryColor;rrTop(M,M,W,HH,14);ctx.fill();
+  const AV=38,ax=M+14,ay=M+(HH-AV)/2;
   ctx.fillStyle='rgba(255,255,255,0.2)';ctx.beginPath();ctx.arc(ax+AV/2,ay+AV/2,AV/2,0,Math.PI*2);ctx.fill();
   ctx.fillStyle=onColor;ctx.font='bold 16px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.fillText((brandName||'?').charAt(0).toUpperCase(),ax+AV/2,ay+AV/2);
   ctx.fillStyle=onColor;ctx.font='bold 13px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';
-  ctx.fillText(brandName,ax+AV+10,16);
-  ctx.fillStyle=onColor+'bb';ctx.font='10px sans-serif';ctx.fillText(subtitle,ax+AV+10,33);
-  const qx=(W-QS)/2,qy=HH+12;
+  ctx.fillText(brandName,ax+AV+10,M+16);
+  ctx.fillStyle=onColor+'bb';ctx.font='10px sans-serif';ctx.fillText(subtitle,ax+AV+10,M+33);
+  const qx=M+(W-QS)/2,qy=M+HH+12;
   ctx.fillStyle='#f0f0f4';rr(qx-5,qy-5,QS+10,QS+10,7);ctx.fill();
   ctx.drawImage(qrCanvas,qx,qy,QS,QS);
   ctx.fillStyle='#1a1a2e';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='top';
-  ctx.fillText(brandName,W/2,qy+QS+14);
+  ctx.fillText(brandName,M+W/2,qy+QS+14);
   ctx.fillStyle='#ccc';ctx.font='9px sans-serif';ctx.textBaseline='bottom';
-  ctx.fillText('QR Generator',W/2,H-6);
+  ctx.fillText('QR Generator',M+W/2,M+H-6);
   return out.toDataURL('image/png');
 }
 
