@@ -13,8 +13,11 @@ const QR_TYPES = {
     },
     validate({ url }) {
       if (!url || !url.trim()) return 'URL is required';
-      try { new URL(url.trim()); return null; }
-      catch { return 'Invalid URL — include https://'; }
+      try {
+        const parsed = new URL(url.trim());
+        if (!['http:', 'https:'].includes(parsed.protocol)) return 'Invalid URL — include https://';
+        return null;
+      } catch { return 'Invalid URL — include https://'; }
     },
   },
 
@@ -48,7 +51,7 @@ const QR_TYPES = {
       return `https://instagram.com/${igUsername.replace(/^@/, '').trim()}`;
     },
     validate({ igUsername }) {
-      if (!igUsername) return 'Instagram username is required';
+      if (!igUsername || !igUsername.trim()) return 'Instagram username is required';
       return null;
     },
   },
@@ -63,7 +66,7 @@ const QR_TYPES = {
       return `https://search.google.com/local/writereview?placeid=${encodeURIComponent(grPlaceId.trim())}`;
     },
     validate({ grPlaceId }) {
-      if (!grPlaceId) return 'Google Place ID is required';
+      if (!grPlaceId || !grPlaceId.trim()) return 'Google Place ID is required';
       return null;
     },
   },
