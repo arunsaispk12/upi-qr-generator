@@ -58,6 +58,12 @@ async function buildBrandedCard({
   // Turn off shadow for everything inside
   ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
+  // Pre-load logo once for reuse in header + centre
+  let logoImg = null;
+  if (logoDataUrl) {
+    try { logoImg = await loadImage(logoDataUrl); } catch { logoImg = null; }
+  }
+
   // Coloured header
   ctx.fillStyle = primaryColor;
   roundRectTop(ctx, 0, 0, W, HH, 16);
@@ -65,18 +71,13 @@ async function buildBrandedCard({
 
   // Logo or letter-avatar in header
   const AV = 40, ax = 16, ay = (HH - AV) / 2;
-  if (logoDataUrl) {
-    try {
-      const logoImg = await loadImage(logoDataUrl);
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(ax + AV/2, ay + AV/2, AV/2, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.drawImage(logoImg, ax, ay, AV, AV);
-      ctx.restore();
-    } catch {
-      drawLetterAvatar(ctx, brandName, ax, ay, AV, onColor);
-    }
+  if (logoImg) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(ax + AV/2, ay + AV/2, AV/2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(logoImg, ax, ay, AV, AV);
+    ctx.restore();
   } else {
     drawLetterAvatar(ctx, brandName, ax, ay, AV, onColor);
   }
@@ -107,19 +108,17 @@ async function buildBrandedCard({
   const lbx  = qx + (QS - bwPx) / 2;
   const lby  = qy + (QS - bhPx) / 2;
 
-  if (logoDataUrl) {
-    try {
-      const logoImg = await loadImage(logoDataUrl);
-      ctx.save();
-      ctx.fillStyle = '#ffffff';
-      roundRect(ctx, lbx - 2, lby - 2, bwPx + 4, bhPx + 4, 4);
-      ctx.fill();
-      roundRect(ctx, lbx, lby, bwPx, bhPx, 4);
-      ctx.clip();
-      ctx.drawImage(logoImg, lbx, lby, bwPx, bhPx);
-      ctx.restore();
-    } catch { /* logo render failed silently */ }
+  if (logoImg) {
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    roundRect(ctx, lbx - 2, lby - 2, bwPx + 4, bhPx + 4, 4);
+    ctx.fill();
+    roundRect(ctx, lbx, lby, bwPx, bhPx, 4);
+    ctx.clip();
+    ctx.drawImage(logoImg, lbx, lby, bwPx, bhPx);
+    ctx.restore();
   } else if (centreText && centreText.trim()) {
+    ctx.save();
     ctx.fillStyle = '#ffffff';
     roundRect(ctx, lbx, lby, bwPx, bhPx, 4);
     ctx.fill();
@@ -128,6 +127,7 @@ async function buildBrandedCard({
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(centreText.toUpperCase(), qx + QS/2, qy + QS/2);
+    ctx.restore();
   }
 
   // Footer info
@@ -159,6 +159,7 @@ function drawLetterAvatar(ctx, name, ax, ay, AV, onColor) {
 }
 
 function luminance(hex) {
+  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return 128; // safe mid-value default
   const r = parseInt(hex.slice(1,3),16);
   const g = parseInt(hex.slice(3,5),16);
   const b = parseInt(hex.slice(5,7),16);
