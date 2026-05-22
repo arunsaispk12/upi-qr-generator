@@ -73,6 +73,20 @@ let state = {
   openscadAvailable: false,
 };
 
+/* ── Payment badge image loader (cached) ────────────────────────── */
+const _badgeCache = {};
+function loadBadge(name) {
+  if (_badgeCache[name]) return Promise.resolve(_badgeCache[name]);
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload  = () => { _badgeCache[name] = img; resolve(img); };
+    img.onerror = () => resolve(null);   // null → fall back to canvas drawing
+    img.src = `/logos/${name}.svg`;
+  });
+}
+// Kick off preload so they're ready by the time user clicks Generate
+['gpay','phonepe','paytm'].forEach(loadBadge);
+
 /* ── DOM helpers ────────────────────────────────────────────────── */
 const $   = id => document.getElementById(id);
 const val = id => { const el = $(id); return el ? el.value.trim() : ''; };
@@ -267,7 +281,7 @@ async function buildFinalCard(qrElement, data) {
         img.src = data.logoDataUrl;
       });
     }
-    return buildUpiCard(qrElement, logoImg, data);
+    return await buildUpiCard(qrElement, logoImg, data);
   }
   return buildCardCanvas(qrElement, data);
 }
@@ -513,7 +527,7 @@ function timeAgo(ts) {
  * Logo overlay: 22% of QS = 84px, circular clip
  * Layout: ~20% branding | ~57% QR | ~12% info | ~7% footer (46px)
  */
-function buildUpiCard(qrEl, logoImg, data) {
+async function buildUpiCard(qrEl, logoImg, data) {
   const pc        = /^#[0-9a-fA-F]{6}$/.test(data.primaryColor||'') ? data.primaryColor : '#0d2e8a';
   const bgColor   = /^#[0-9a-fA-F]{6}$/.test(data.bgColor||'')      ? data.bgColor      : '#ffffff';
   const brandName = data.brandName || data.payeeName || 'Brand';
@@ -729,7 +743,7 @@ function buildUpiCard(qrEl, logoImg, data) {
   // ── UPI ID PILL ───────────────────────────────────────────────────
   const pillH=36, pillW=W-60;
   ctx.fillStyle=pc; rr(M+30,y,pillW,pillH,pillH/2); ctx.fill();
-  ctx.fillStyle='#ffffff'; ctx.font='900 16px monospace'; ctx.textBaseline='middle';
+  ctx.fillStyle='#ffffff'; ctx.font='900 20px monospace'; ctx.textBaseline='middle';
   let uid=upiId;
   while(ctx.measureText(uid).width>pillW-28&&uid.length>6) uid=uid.slice(0,-1);
   if(uid!==upiId) uid+='…';
@@ -741,23 +755,34 @@ function buildUpiCard(qrEl, logoImg, data) {
   ctx.fillText('ALL UPI APPS ACCEPTED', cx, y);
   y += 16;
 
-  // ── PAYMENT APP LOGOS (G Pay · PhonePe · Paytm) ──────────────────
+  // ── PAYMENT APP LOGOS — SVG images (G Pay · PhonePe · Paytm) ────
   {
-    const bh=34, gap=10;
-    // Measure badge widths dynamically
-    const p=5, gs=bh-p*2, r=gs*0.40, lwd=r*0.34;
-    ctx.font=`500 ${Math.round(bh*0.40)}px sans-serif`;
-    const gpW = Math.ceil(p+gs + lwd*0.5+4 + ctx.measureText('Pay').width + p);
-    const pp_r=(bh-p*2)*0.50;
-    ctx.font=`700 ${Math.round(bh*0.36)}px sans-serif`;
-    const phoneW = Math.ceil(p+pp_r*2+5 + ctx.measureText('PhonePe').width + p*2);
-    ctx.font=`900 ${Math.round(bh*0.43)}px sans-serif`;
-    const ptW = Math.ceil(ctx.measureText('Paytm').width + p*4);
-    const totalBW = gpW + phoneW + ptW + gap*2;
-    let bx = cx - totalBW/2;
-    drawGPayBadge(bx, y, gpW, bh);   bx += gpW   + gap;
-    drawPhonePeBadge(bx, y, phoneW, bh); bx += phoneW + gap;
-    drawPaytmBadge(bx, y, ptW, bh);
+    // Load (or use cached) SVG badge images
+    const [gpayImg, phonepeImg, paytmImg] = await Promise.all([
+      loadBadge('gpay'), loadBadge('phonepe'), loadBadge('paytm'),
+    ]);
+
+    const bh = 36, gap = 12;
+    // Each badge: natural SVG aspect ratio drives width at bh height
+    // viewBox ratios: gpay=124/48, phonepe=168/48, paytm=130/48
+    const badges = [
+      { img: gpayImg,    ar: 124/48, fallback: drawGPayBadge    },
+      { img: phonepeImg, ar: 168/48, fallback: drawPhonePeBadge },
+      { img: paytmImg,   ar: 130/48, fallback: drawPaytmBadge   },
+    ];
+    const bws    = badges.map(b => Math.round(b.ar * bh));
+    const totalBW = bws.reduce((s,w) => s+w, 0) + gap * (badges.length-1);
+    let bx = cx - totalBW / 2;
+
+    badges.forEach((b, i) => {
+      const bw = bws[i];
+      if (b.img) {
+        ctx.drawImage(b.img, bx, y, bw, bh);
+      } else {
+        b.fallback(bx, y, bw, bh);   // canvas-drawn fallback
+      }
+      bx += bw + gap;
+    });
     y += bh;
   }
 

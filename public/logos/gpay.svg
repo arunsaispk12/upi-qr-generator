@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 124 48">
+  <!-- G Pay pill badge — matches official Google Pay badge style -->
+  <rect x="2" y="2" width="120" height="44" rx="22" fill="white" stroke="#3c4043" stroke-width="3"/>
+
+  <!-- Google G: centre (26,24), ring radius 13, stroke-width 5.4 -->
+  <!-- 4 CCW arcs — each one quarter of the circle (sweep-flag=0) -->
+  <g stroke-width="5.4" fill="none" stroke-linecap="butt" transform="translate(26,24)">
+    <!-- Blue  : right(13,0) → top(0,-13)  upper-right quadrant -->
+    <path d="M 13 0 A 13 13 0 0 0 0 -13"  stroke="#4285F4"/>
+    <!-- Red   : top(0,-13) → left(-13,0)  upper-left quadrant -->
+    <path d="M 0 -13 A 13 13 0 0 0 -13 0" stroke="#EA4335"/>
+    <!-- Yellow: left(-13,0)→ bot(0,13)    lower-left quadrant -->
+    <path d="M -13 0 A 13 13 0 0 0 0 13"  stroke="#FBBC05"/>
+    <!-- Green : bot(0,13)  → right(13,0)  lower-right quadrant -->
+    <path d="M 0 13 A 13 13 0 0 0 13 0"   stroke="#34A853"/>
+  </g>
+
+  <!-- White rectangle clears the arc junction so crossbar reads cleanly -->
+  <rect x="29" y="19" width="11" height="10" fill="white"/>
+
+  <!-- Crossbar (blue): centre → right, then short downstroke -->
+  <g stroke="#4285F4" stroke-width="5.4" stroke-linecap="round" fill="none" transform="translate(26,24)">
+    <line x1="0" y1="0" x2="13.5" y2="0"/>
+    <line x1="13" y1="0" x2="13"  y2="6.5"/>
+  </g>
+
+  <!-- "Pay" label -->
+  <text x="49" y="32"
+        font-family="Roboto,'Google Sans',Arial,sans-serif"
+        font-weight="500" font-size="21" fill="#3c4043">Pay</text>
+</svg>
