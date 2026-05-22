@@ -1,14 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 48">
-  <!-- White pill background (readable on any card colour) -->
+  <!-- White pill background -->
   <rect x="1" y="1" width="126" height="46" rx="10" fill="white" stroke="#e0e0e0" stroke-width="1.2"/>
 
-  <!-- "Pay" in Paytm navy — tight to the left -->
-  <text x="10" y="35"
-        font-family="Roboto,'Arial Rounded MT Bold',Arial,sans-serif"
-        font-weight="900" font-size="30" fill="#1D2C6B">Pay</text>
-
-  <!-- "tm" in Paytm cyan — immediately follows "Pay" -->
-  <text x="68" y="35"
-        font-family="Roboto,'Arial Rounded MT Bold',Arial,sans-serif"
-        font-weight="900" font-size="30" fill="#00BAF2">tm</text>
+  <!-- "Paytm" as a single text with tspan so Pay+tm stay joined regardless of font metrics -->
+  <text x="10" y="36"
+        font-family="'Arial Black',Arial,sans-serif"
+        font-weight="900" font-size="28">
+    <tspan fill="#00246B">Pay</tspan><tspan fill="#00BAF2">tm</tspan>
+  </text>
 </svg>

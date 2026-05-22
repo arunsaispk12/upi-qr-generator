@@ -1,22 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 168 48">
-  <!-- White pill background (readable on any card colour) -->
+  <!-- White pill background -->
   <rect x="1" y="1" width="166" height="46" rx="23" fill="white" stroke="#e0e0e0" stroke-width="1.2"/>
 
-  <!-- Purple circle -->
-  <circle cx="26" cy="24" r="20" fill="#6739B7"/>
+  <!-- Purple circle icon -->
+  <circle cx="26" cy="24" r="19" fill="#5F259F"/>
 
-  <!-- Devanagari पे symbol in white -->
-  <text x="26" y="31"
-        text-anchor="middle"
-        font-family="'Noto Sans Devanagari','Mangal','Arial Unicode MS',sans-serif"
-        font-weight="900" font-size="20" fill="white">पे</text>
-
-  <!-- Diagonal white accent stroke -->
-  <line x1="14" y1="35" x2="38" y2="13"
-        stroke="white" stroke-width="3.2" stroke-linecap="round"/>
+  <!-- P letterform as paths (no font dependency); fill-rule evenodd punches the inner bowl -->
+  <path fill="white" fill-rule="evenodd"
+        d="M17,11 L17,37 L22,37 L22,25 Q35,25 35,18 Q35,11 22,11 Z
+           M22,15.5 Q29,15.5 29,18 Q29,20.5 22,20.5 Z"/>
 
   <!-- PhonePe wordmark -->
-  <text x="53" y="31"
-        font-family="Roboto,'Circular Std',Arial,sans-serif"
-        font-weight="700" font-size="20" fill="#6739B7">PhonePe</text>
+  <text x="54" y="31"
+        font-family="Arial,sans-serif"
+        font-weight="700" font-size="20" fill="#5F259F">PhonePe</text>
 </svg>

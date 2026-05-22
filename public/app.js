@@ -2,6 +2,7 @@
 const QR_TYPES = {
   url: {
     label: 'Website', subtitle: 'Scan to Visit', centreLabelText: 'URL',
+    logoName: 'url',
     defaultColor: '#1a73e8',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
     getLabel: d => d.url || 'Website',
@@ -10,6 +11,7 @@ const QR_TYPES = {
   },
   whatsapp: {
     label: 'WhatsApp', subtitle: 'Scan to Chat', centreLabelText: 'WA',
+    logoName: 'whatsapp',
     defaultColor: '#25D366',
     icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.886 9.884"/></svg>',
     getLabel: d => d.waPhone || 'WhatsApp',
@@ -21,6 +23,7 @@ const QR_TYPES = {
   },
   instagram: {
     label: 'Instagram', subtitle: 'Scan to Follow', centreLabelText: 'IG',
+    logoName: 'instagram',
     defaultColor: '#E1306C',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>',
     getLabel: d => d.igUsername || 'Instagram',
@@ -29,6 +32,7 @@ const QR_TYPES = {
   },
   google_review: {
     label: 'Google Review', subtitle: 'Leave a Review', centreLabelText: 'G',
+    logoName: 'google',
     defaultColor: '#4285F4',
     icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>',
     getLabel: d => d.grPlaceId || 'Google Review',
@@ -50,6 +54,7 @@ const QR_TYPES = {
   },
   wifi: {
     label: 'WiFi', subtitle: 'Scan to Connect', centreLabelText: 'WiFi',
+    logoName: 'wifi',
     defaultColor: '#0ea5e9',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M10.54 16.1a6 6 0 0 1 2.92 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>',
     getLabel: d => d.wifiSsid || 'WiFi',
@@ -75,17 +80,19 @@ let state = {
 
 /* ── Payment badge image loader (cached) ────────────────────────── */
 const _badgeCache = {};
+const BADGE_EXT = { gpay: 'png', phonepe: 'webp', paytm: 'png' };
 function loadBadge(name) {
   if (_badgeCache[name]) return Promise.resolve(_badgeCache[name]);
   return new Promise(resolve => {
     const img = new Image();
     img.onload  = () => { _badgeCache[name] = img; resolve(img); };
     img.onerror = () => resolve(null);   // null → fall back to canvas drawing
-    img.src = `/logos/${name}.svg`;
+    const ext = BADGE_EXT[name] || 'svg';
+    img.src = `/logos/${name}.${ext}?v=3`;
   });
 }
 // Kick off preload so they're ready by the time user clicks Generate
-['gpay','phonepe','paytm'].forEach(loadBadge);
+['gpay','phonepe','paytm','whatsapp','instagram','google','url','wifi'].forEach(loadBadge);
 
 /* ── DOM helpers ────────────────────────────────────────────────── */
 const $   = id => document.getElementById(id);
@@ -271,19 +278,21 @@ async function buildCardFromPlainQR(qrDataUrl, data) {
 }
 
 async function buildFinalCard(qrElement, data) {
-  if (data.mode === 'upi') {
-    let logoImg = null;
-    if (data.logoDataUrl) {
-      logoImg = await new Promise(resolve => {
-        const img = new Image();
-        img.onload  = () => resolve(img);
-        img.onerror = () => resolve(null);
-        img.src = data.logoDataUrl;
-      });
-    }
-    return await buildUpiCard(qrElement, logoImg, data);
+  let userLogoImg = null;
+  if (data.logoDataUrl) {
+    userLogoImg = await new Promise(resolve => {
+      const img = new Image();
+      img.onload  = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = data.logoDataUrl;
+    });
   }
-  return buildCardCanvas(qrElement, data);
+  if (data.mode === 'upi') {
+    return buildUpiCard(qrElement, userLogoImg, data);
+  }
+  const typeDef    = QR_TYPES[data.mode];
+  const svcLogoImg = typeDef && typeDef.logoName ? await loadBadge(typeDef.logoName) : null;
+  return buildServiceCard(qrElement, userLogoImg, svcLogoImg, data);
 }
 
 /* ── Client-side fallback ───────────────────────────────────────── */
@@ -610,11 +619,13 @@ async function buildUpiCard(qrEl, logoImg, data) {
   function drawPaytmBadge(bx,by,bw,bh){
     ctx.fillStyle='#e5f7fd'; ctx.strokeStyle='#80d8f0'; ctx.lineWidth=0.8;
     rr(bx,by,bw,bh,6); ctx.fill(); rr(bx,by,bw,bh,6); ctx.stroke();
-    ctx.fillStyle='#002970'; ctx.font=`900 ${Math.round(bh*0.43)}px sans-serif`;
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('Pay',bx+bw*0.38,by+bh/2+1);
-    ctx.fillStyle='#00BAF2';
-    ctx.fillText('tm',bx+bw*0.72,by+bh/2+1);
+    const fs = Math.round(bh*0.43);
+    ctx.font=`900 ${fs}px sans-serif`; ctx.textBaseline='middle'; ctx.textAlign='left';
+    const payW = ctx.measureText('Pay').width;
+    const tmW  = ctx.measureText('tm').width;
+    const tx   = bx + (bw - payW - tmW) / 2;
+    ctx.fillStyle='#002970'; ctx.fillText('Pay', tx, by+bh/2+1);
+    ctx.fillStyle='#00BAF2'; ctx.fillText('tm', tx + payW, by+bh/2+1);
   }
 
   /* ── Trust-signal icon drawers (footer) ─────────────────────────── */
@@ -755,34 +766,44 @@ async function buildUpiCard(qrEl, logoImg, data) {
   ctx.fillText('ALL UPI APPS ACCEPTED', cx, y);
   y += 16;
 
-  // ── PAYMENT APP LOGOS — SVG images (G Pay · PhonePe · Paytm) ────
+  // ── PAYMENT APP LOGOS — real brand images in pill containers ────
   {
-    // Load (or use cached) SVG badge images
     const [gpayImg, phonepeImg, paytmImg] = await Promise.all([
       loadBadge('gpay'), loadBadge('phonepe'), loadBadge('paytm'),
     ]);
 
-    const bh = 36, gap = 10;
-    // Aspect ratios match updated SVG viewBoxes exactly
+    const bh = 40, gap = 12, pad = 6;
+    const logoH = bh - pad * 2;
+
+    function badgeAr(img, fallbackAr) {
+      if (!img) return fallbackAr;
+      const nw = img.naturalWidth, nh = img.naturalHeight;
+      return (nw && nh) ? nw / nh : fallbackAr;
+    }
+
     const badges = [
-      { img: gpayImg,    ar: 124/48, fallback: drawGPayBadge    },
-      { img: phonepeImg, ar: 168/48, fallback: drawPhonePeBadge },
-      { img: paytmImg,   ar: 128/48, fallback: drawPaytmBadge   },
+      { img: gpayImg,    ar: badgeAr(gpayImg,    752/400), fallback: drawGPayBadge    },
+      { img: phonepeImg, ar: badgeAr(phonepeImg,  1.5),    fallback: drawPhonePeBadge },
+      { img: paytmImg,   ar: badgeAr(paytmImg,    1.5),    fallback: drawPaytmBadge   },
     ];
-    const bws     = badges.map(b => Math.round(b.ar * bh));
-    const totalBW = bws.reduce((s,w) => s+w, 0) + gap * (badges.length-1);
+
+    const bws     = badges.map(b => Math.round(logoH * b.ar) + pad * 2);
+    const totalBW = bws.reduce((s, w) => s + w, 0) + gap * (badges.length - 1);
     let bx = cx - totalBW / 2;
 
     badges.forEach((b, i) => {
       const bw = bws[i];
       if (b.img) {
-        // Subtle shadow so white badges lift off any card background
         ctx.save();
-        ctx.shadowColor = 'rgba(0,0,0,0.18)';
-        ctx.shadowBlur  = 6;
+        ctx.shadowColor   = 'rgba(0,0,0,0.18)';
+        ctx.shadowBlur    = 6;
         ctx.shadowOffsetY = 2;
-        ctx.drawImage(b.img, bx, y, bw, bh);
+        ctx.fillStyle = '#ffffff';
+        rr(bx, y, bw, bh, bh / 2);
+        ctx.fill();
         ctx.restore();
+        const logoW = bw - pad * 2;
+        ctx.drawImage(b.img, bx + pad, y + pad, logoW, logoH);
       } else {
         b.fallback(bx, y, bw, bh);
       }
@@ -829,6 +850,265 @@ async function buildUpiCard(qrEl, logoImg, data) {
     });
   }
 
+  ctx.restore();
+  return out.toDataURL('image/png');
+}
+
+/* ── Per-mode config for service cards ──────────────────────────── */
+const SERVICE_CFG = {
+  url: {
+    actionText: 'SCAN TO VISIT',
+    viaText:    'WEBSITE',
+    infoText: d => { try { return new URL(d.url).hostname; } catch { return (d.url||'').slice(0,40); } },
+  },
+  whatsapp: {
+    actionText: 'SCAN TO CHAT',
+    viaText:    'VIA WHATSAPP',
+    infoText: d => '+' + (d.waPhone||'').replace(/\D/g,''),
+  },
+  instagram: {
+    actionText: 'SCAN TO FOLLOW',
+    viaText:    'ON INSTAGRAM',
+    infoText: d => '@' + (d.igUsername||'').replace(/^@/,'').trim(),
+  },
+  google_review: {
+    actionText: 'LEAVE A REVIEW',
+    viaText:    'ON GOOGLE',
+    infoText: () => '★  Google Review',
+  },
+  wifi: {
+    actionText: 'SCAN TO CONNECT',
+    viaText:    'WI-FI NETWORK',
+    infoText: d => d.wifiSsid || 'Network',
+  },
+};
+
+/* ── Professional service card (WhatsApp, Instagram, Google, URL, WiFi) */
+async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
+  const typeDef  = QR_TYPES[data.mode] || {};
+  const cfg      = SERVICE_CFG[data.mode] || {};
+  const pc       = /^#[0-9a-fA-F]{6}$/.test(data.primaryColor||'') ? data.primaryColor : (typeDef.defaultColor || '#1a73e8');
+  const bgColor  = /^#[0-9a-fA-F]{6}$/.test(data.bgColor||'')      ? data.bgColor      : '#ffffff';
+  const brandName = data.brandName || typeDef.getLabel && typeDef.getLabel(data) || data.mode;
+  const tagline  = (data.tagline || '').trim();
+
+  function luma(hex) {
+    const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+    return 0.299*r + 0.587*g + 0.114*b;
+  }
+  const bgDark   = luma(bgColor) < 160;
+  const textCol  = bgDark ? '#ffffff' : pc;
+  const muteCol  = bgDark ? 'rgba(255,255,255,0.55)' : pc;
+  const divAlpha = bgDark ? 0.25 : 0.13;
+
+  // With user logo → same tall card as UPI; without → compact
+  const W=500, H=userLogoImg ? 1100 : 740, M=12, SC=2;
+  const QS = userLogoImg ? 380 : 340;
+  const out = document.createElement('canvas');
+  out.width=(W+M*2)*SC; out.height=(H+M*2)*SC;
+  const ctx=out.getContext('2d');
+  ctx.scale(SC,SC);
+  const cx=M+W/2;
+
+  function rr(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+    ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+    ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+    ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
+    ctx.closePath();
+  }
+
+  /* ── Trust icons (same as UPI card) ── */
+  function iconShield(ix,iy,is,col){
+    ctx.save(); ctx.strokeStyle=col; ctx.lineWidth=1.6; ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(ix+is*.50,iy);
+    ctx.lineTo(ix+is*.95,iy+is*.26); ctx.lineTo(ix+is*.95,iy+is*.58);
+    ctx.bezierCurveTo(ix+is*.95,iy+is*.82,ix+is*.50,iy+is,ix+is*.50,iy+is);
+    ctx.bezierCurveTo(ix+is*.05,iy+is*.82,ix+is*.05,iy+is*.58,ix+is*.05,iy+is*.58);
+    ctx.lineTo(ix+is*.05,iy+is*.26); ctx.closePath(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ix+is*.30,iy+is*.52); ctx.lineTo(ix+is*.46,iy+is*.68); ctx.lineTo(ix+is*.72,iy+is*.38); ctx.stroke();
+    ctx.restore();
+  }
+  function iconBolt(ix,iy,is,col){
+    ctx.save(); ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.moveTo(ix+is*.60,iy); ctx.lineTo(ix+is*.26,iy+is*.50);
+    ctx.lineTo(ix+is*.48,iy+is*.50); ctx.lineTo(ix+is*.38,iy+is);
+    ctx.lineTo(ix+is*.74,iy+is*.50); ctx.lineTo(ix+is*.52,iy+is*.50);
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+  function iconThumb(ix,iy,is,col){
+    ctx.save(); ctx.strokeStyle=col; ctx.lineWidth=1.6; ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(ix+is*.10,iy+is*.46); ctx.lineTo(ix+is*.10,iy+is*.96);
+    ctx.lineTo(ix+is*.38,iy+is*.96); ctx.lineTo(ix+is*.38,iy+is*.46);
+    ctx.lineTo(ix+is*.38,iy+is*.30);
+    ctx.arc(ix+is*.55,iy+is*.18,is*.20,Math.PI,0,false);
+    ctx.lineTo(ix+is*.75,iy+is*.46);
+    ctx.lineTo(ix+is*.94,iy+is*.46); ctx.lineTo(ix+is*.94,iy+is*.92);
+    ctx.lineTo(ix+is*.38,iy+is*.92); ctx.stroke();
+    ctx.globalAlpha=0.5;
+    [.60,.72,.84].forEach(t=>{ctx.beginPath();ctx.moveTo(ix+is*.38,iy+is*t);ctx.lineTo(ix+is*.94,iy+is*t);ctx.stroke();});
+    ctx.restore();
+  }
+
+  // Card shadow + background
+  ctx.shadowColor='rgba(0,0,0,0.22)'; ctx.shadowBlur=28; ctx.shadowOffsetY=8;
+  ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
+  ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
+  ctx.save(); rr(M,M,W,H,20); ctx.clip();
+
+  let y = M+22;
+
+  // ── USER LOGO (if uploaded) ───────────────────────────────────────
+  if (userLogoImg) {
+    const maxH=350, maxW=W*0.82;
+    const sc=Math.min(maxH/userLogoImg.naturalHeight, maxW/userLogoImg.naturalWidth);
+    const lw=Math.round(userLogoImg.naturalWidth*sc), lh=Math.round(userLogoImg.naturalHeight*sc);
+    ctx.drawImage(userLogoImg, cx-lw/2, y, lw, lh);
+    y += lh+18;
+  } else if (svcLogoImg) {
+    // No user logo → show small service icon at top
+    const iconSz=64;
+    ctx.save();
+    ctx.shadowColor='rgba(0,0,0,0.12)'; ctx.shadowBlur=8; ctx.shadowOffsetY=3;
+    ctx.beginPath(); ctx.arc(cx, y+iconSz/2, iconSz/2+2, 0, Math.PI*2); ctx.fillStyle='#ffffff'; ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, y+iconSz/2, iconSz/2, 0, Math.PI*2); ctx.clip();
+    ctx.drawImage(svcLogoImg, cx-iconSz/2, y, iconSz, iconSz);
+    ctx.restore();
+    y += iconSz+14;
+  }
+
+  // ── BRAND NAME ────────────────────────────────────────────────────
+  ctx.fillStyle=textCol; ctx.textAlign='center'; ctx.textBaseline='top';
+  let fs=32;
+  ctx.font=`900 ${fs}px sans-serif`;
+  while(ctx.measureText(brandName.toUpperCase()).width>W-32&&fs>12){fs--;ctx.font=`900 ${fs}px sans-serif`;}
+  ctx.fillText(brandName.toUpperCase(), cx, y);
+  y += fs+8;
+
+  // ── TAGLINE or divider ────────────────────────────────────────────
+  if (tagline) {
+    const tl=tagline.toUpperCase();
+    ctx.font='12px sans-serif';
+    const tW=ctx.measureText(tl).width;
+    const ll=Math.max(0,(W-tW-48)/2-6);
+    ctx.globalAlpha=divAlpha*2; ctx.strokeStyle=textCol; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(M+16,y+8); ctx.lineTo(M+16+ll,y+8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+tW/2+6,y+8); ctx.lineTo(cx+tW/2+6+ll,y+8); ctx.stroke();
+    ctx.globalAlpha=0.7; ctx.fillStyle=textCol; ctx.fillText(tl, cx, y+1); ctx.globalAlpha=1;
+  } else {
+    ctx.strokeStyle=textCol; ctx.lineWidth=1; ctx.globalAlpha=divAlpha;
+    ctx.beginPath(); ctx.moveTo(M+16,y+8); ctx.lineTo(M+W-16,y+8); ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+  y += 20;
+
+  // ── ACTION HEADER ─────────────────────────────────────────────────
+  y += 12;
+  const spTxt = cfg.actionText || 'SCAN QR CODE';
+  ctx.font='bold 16px sans-serif'; ctx.fillStyle=textCol; ctx.textBaseline='top';
+  const spW=ctx.measureText(spTxt).width;
+  const dl=Math.max(0,(W-spW-48)/2-6);
+  ctx.strokeStyle=textCol; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(M+16,y+10); ctx.lineTo(M+16+dl,y+10); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+spW/2+6,y+10); ctx.lineTo(cx+spW/2+6+dl,y+10); ctx.stroke();
+  ctx.fillText(spTxt, cx, y);
+  y += 22;
+
+  // ── VIA SERVICE ───────────────────────────────────────────────────
+  ctx.font='12px sans-serif'; ctx.fillStyle=muteCol;
+  ctx.fillText(cfg.viaText || '', cx, y);
+  y += 16;
+
+  // ── QR BOX ────────────────────────────────────────────────────────
+  const qbPad=10, qbSz=QS+qbPad*2;
+  const qbX=M+(W-qbSz)/2, qbY=y+8;
+  ctx.strokeStyle=pc; ctx.lineWidth=3;
+  rr(qbX,qbY,qbSz,qbSz,14); ctx.stroke();
+  ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
+  ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
+
+  // ── LOGO OVERLAY in QR centre ─────────────────────────────────────
+  const overlayImg = userLogoImg || svcLogoImg;
+  if (overlayImg) {
+    const os=Math.round(QS*0.22);
+    const ox=qbX+qbPad+(QS-os)/2, oy=qbY+qbPad+(QS-os)/2;
+    ctx.fillStyle='#ffffff'; rr(ox-5,oy-5,os+10,os+10,7); ctx.fill();
+    ctx.save(); rr(ox,oy,os,os,5); ctx.clip();
+    ctx.drawImage(overlayImg,ox,oy,os,os); ctx.restore();
+  }
+  y = qbY+qbSz+14;
+
+  // ── INFO PILL ─────────────────────────────────────────────────────
+  const infoText = cfg.infoText ? cfg.infoText(data) : (brandName || data.mode);
+  const pillH=36, pillW=W-60;
+  ctx.fillStyle=pc; rr(M+30,y,pillW,pillH,pillH/2); ctx.fill();
+  ctx.fillStyle='#ffffff'; ctx.font='900 18px monospace'; ctx.textBaseline='middle';
+  let piT=infoText;
+  while(ctx.measureText(piT).width>pillW-32&&piT.length>4) piT=piT.slice(0,-1);
+  if(piT!==infoText) piT+='…';
+  ctx.fillText(piT, cx, y+pillH/2);
+  y += pillH+10;
+
+  // ── SERVICE BADGE ─────────────────────────────────────────────────
+  if (svcLogoImg) {
+    const bh=40, iconSz=bh-8;
+    ctx.font=`700 ${Math.round(bh*0.38)}px sans-serif`;
+    const label = typeDef.label || data.mode;
+    const labelW = ctx.measureText(label).width;
+    const bw = iconSz + 12 + labelW + 16; // icon + gap + text + padding
+    const bx = cx - bw/2;
+    // pill bg
+    ctx.save();
+    ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=6; ctx.shadowOffsetY=2;
+    ctx.fillStyle='#ffffff'; rr(bx,y,bw,bh,bh/2); ctx.fill();
+    ctx.restore();
+    // service icon clipped to circle
+    const iconX=bx+8, iconY=y+(bh-iconSz)/2;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(iconX+iconSz/2, iconY+iconSz/2, iconSz/2, 0, Math.PI*2); ctx.clip();
+    ctx.drawImage(svcLogoImg, iconX, iconY, iconSz, iconSz);
+    ctx.restore();
+    // label
+    ctx.fillStyle=pc;
+    ctx.font=`700 ${Math.round(bh*0.38)}px sans-serif`;
+    ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillText(label, iconX+iconSz+8, y+bh/2);
+  }
+  y += 48;
+
+  // ── FOOTER ────────────────────────────────────────────────────────
+  const footH=56, footY=M+H-footH;
+  ctx.fillStyle=pc;
+  ctx.beginPath();
+  ctx.moveTo(M,footY); ctx.lineTo(M+W,footY);
+  ctx.lineTo(M+W,M+H-20); ctx.quadraticCurveTo(M+W,M+H,M+W-20,M+H);
+  ctx.lineTo(M+20,M+H); ctx.quadraticCurveTo(M,M+H,M,M+H-20);
+  ctx.closePath(); ctx.fill();
+  {
+    const fcy=footY+footH/2, icSz=footH*0.40, icY=fcy-icSz/2;
+    const trustFont=`bold 11px sans-serif`;
+    ctx.font=trustFont;
+    const items=[{label:'SECURE',draw:iconShield},{label:'FAST',draw:iconBolt},{label:'RELIABLE',draw:iconThumb}];
+    const sep='  |  ', sepW=ctx.measureText(sep).width;
+    const itemWidths=items.map(it=>icSz+4+ctx.measureText(it.label).width);
+    const totalTW=itemWidths.reduce((s,w)=>s+w,0)+sepW*(items.length-1);
+    let tx=cx-totalTW/2;
+    ctx.fillStyle='#ffffff'; ctx.textBaseline='middle';
+    items.forEach((it,i)=>{
+      it.draw(tx,icY,icSz,'#ffffff');
+      ctx.font=trustFont; ctx.fillStyle='#ffffff'; ctx.textAlign='left';
+      ctx.fillText(it.label, tx+icSz+4, fcy);
+      tx+=itemWidths[i];
+      if(i<items.length-1){ctx.globalAlpha=0.45;ctx.fillText(sep,tx,fcy);ctx.globalAlpha=1;tx+=sepW;}
+    });
+  }
   ctx.restore();
   return out.toDataURL('image/png');
 }
