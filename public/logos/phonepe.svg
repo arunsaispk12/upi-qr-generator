@@ -1,21 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 168 48">
-  <!-- PhonePe logo — purple circle with Devanagari Pe mark + wordmark -->
+  <!-- White pill background (readable on any card colour) -->
+  <rect x="1" y="1" width="166" height="46" rx="23" fill="white" stroke="#e0e0e0" stroke-width="1.2"/>
 
   <!-- Purple circle -->
-  <circle cx="24" cy="24" r="22" fill="#6739B7"/>
+  <circle cx="26" cy="24" r="20" fill="#6739B7"/>
 
-  <!-- White Devanagari "पे" symbol inside circle -->
-  <text x="24" y="31"
+  <!-- Devanagari पे symbol in white -->
+  <text x="26" y="31"
         text-anchor="middle"
         font-family="'Noto Sans Devanagari','Mangal','Arial Unicode MS',sans-serif"
-        font-weight="900" font-size="22" fill="white">पे</text>
+        font-weight="900" font-size="20" fill="white">पे</text>
 
-  <!-- Diagonal white accent stroke (PhonePe's signature mark) -->
-  <line x1="12" y1="36" x2="36" y2="12"
-        stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- Diagonal white accent stroke -->
+  <line x1="14" y1="35" x2="38" y2="13"
+        stroke="white" stroke-width="3.2" stroke-linecap="round"/>
 
-  <!-- "PhonePe" wordmark in purple -->
-  <text x="52" y="32"
+  <!-- PhonePe wordmark -->
+  <text x="53" y="31"
         font-family="Roboto,'Circular Std',Arial,sans-serif"
-        font-weight="700" font-size="22" fill="#6739B7">PhonePe</text>
+        font-weight="700" font-size="20" fill="#6739B7">PhonePe</text>
 </svg>

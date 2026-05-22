@@ -1,15 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 130 48">
-  <!-- Paytm wordmark: "Pay" in dark navy + "tm" in cyan -->
-  <!-- Matches the two-tone brand palette exactly -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 48">
+  <!-- White pill background (readable on any card colour) -->
+  <rect x="1" y="1" width="126" height="46" rx="10" fill="white" stroke="#e0e0e0" stroke-width="1.2"/>
 
-  <!-- "Pay" in Paytm navy -->
-  <text x="4" y="38"
+  <!-- "Pay" in Paytm navy — tight to the left -->
+  <text x="10" y="35"
         font-family="Roboto,'Arial Rounded MT Bold',Arial,sans-serif"
-        font-weight="900" font-size="38" fill="#1D2C6B">Pay</text>
+        font-weight="900" font-size="30" fill="#1D2C6B">Pay</text>
 
-  <!-- "tm" in Paytm cyan — "t" has a taller cap than "m" -->
-  <!-- Render as one string so kerning stays natural -->
-  <text x="80" y="38"
+  <!-- "tm" in Paytm cyan — immediately follows "Pay" -->
+  <text x="68" y="35"
         font-family="Roboto,'Arial Rounded MT Bold',Arial,sans-serif"
-        font-weight="900" font-size="38" fill="#00BAF2">tm</text>
+        font-weight="900" font-size="30" fill="#00BAF2">tm</text>
 </svg>

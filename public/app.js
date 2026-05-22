@@ -762,24 +762,29 @@ async function buildUpiCard(qrEl, logoImg, data) {
       loadBadge('gpay'), loadBadge('phonepe'), loadBadge('paytm'),
     ]);
 
-    const bh = 36, gap = 12;
-    // Each badge: natural SVG aspect ratio drives width at bh height
-    // viewBox ratios: gpay=124/48, phonepe=168/48, paytm=130/48
+    const bh = 36, gap = 10;
+    // Aspect ratios match updated SVG viewBoxes exactly
     const badges = [
       { img: gpayImg,    ar: 124/48, fallback: drawGPayBadge    },
       { img: phonepeImg, ar: 168/48, fallback: drawPhonePeBadge },
-      { img: paytmImg,   ar: 130/48, fallback: drawPaytmBadge   },
+      { img: paytmImg,   ar: 128/48, fallback: drawPaytmBadge   },
     ];
-    const bws    = badges.map(b => Math.round(b.ar * bh));
+    const bws     = badges.map(b => Math.round(b.ar * bh));
     const totalBW = bws.reduce((s,w) => s+w, 0) + gap * (badges.length-1);
     let bx = cx - totalBW / 2;
 
     badges.forEach((b, i) => {
       const bw = bws[i];
       if (b.img) {
+        // Subtle shadow so white badges lift off any card background
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.18)';
+        ctx.shadowBlur  = 6;
+        ctx.shadowOffsetY = 2;
         ctx.drawImage(b.img, bx, y, bw, bh);
+        ctx.restore();
       } else {
-        b.fallback(bx, y, bw, bh);   // canvas-drawn fallback
+        b.fallback(bx, y, bw, bh);
       }
       bx += bw + gap;
     });
