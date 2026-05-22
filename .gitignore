@@ -4,3 +4,8 @@ node_modules/
 dist/
 .DS_Store
 Thumbs.db
+
+# Debug / preview screenshots
+upi-card-*.png
+*.playwright-mcp/
+.playwright-mcp/
