@@ -1,16 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="ig" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#F58529"/>
-      <stop offset="35%" stop-color="#DD2A7B"/>
-      <stop offset="70%" stop-color="#8134AF"/>
-      <stop offset="100%" stop-color="#515BD4"/>
-    </linearGradient>
+    <radialGradient id="ig-bg" cx="30%" cy="100%" r="120%">
+      <stop offset="0%"   stop-color="#FFDC80"/>
+      <stop offset="20%"  stop-color="#FCAF45"/>
+      <stop offset="40%"  stop-color="#F77737"/>
+      <stop offset="55%"  stop-color="#F56040"/>
+      <stop offset="70%"  stop-color="#FD1D1D"/>
+      <stop offset="85%"  stop-color="#E1306C"/>
+      <stop offset="100%" stop-color="#833AB4"/>
+    </radialGradient>
+    <clipPath id="ig-clip"><circle cx="32" cy="32" r="32"/></clipPath>
   </defs>
-  <rect width="64" height="64" rx="14" fill="url(#ig)"/>
-  <g transform="translate(8,8) scale(2)" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="32" cy="32" r="32" fill="url(#ig-bg)"/>
+  <g clip-path="url(#ig-clip)" transform="translate(10,10) scale(1.84)" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
-    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
-    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" stroke-width="2.5"/>
+    <circle cx="12" cy="12" r="4"/>
+    <circle cx="17.5" cy="6.5" r="0.9" fill="white" stroke="none"/>
   </g>
 </svg>

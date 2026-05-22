@@ -787,27 +787,31 @@ async function buildUpiCard(qrEl, logoImg, data) {
       { img: paytmImg,   ar: badgeAr(paytmImg,    1.5),    fallback: drawPaytmBadge   },
     ];
 
-    const bws     = badges.map(b => Math.round(logoH * b.ar) + pad * 2);
-    const totalBW = bws.reduce((s, w) => s + w, 0) + gap * (badges.length - 1);
+    // Equal-width pills: find the widest logo, use that for all
+    const logoWs  = badges.map(b => Math.round(logoH * b.ar));
+    const maxLogoW = Math.max(...logoWs);
+    const pillW   = maxLogoW + pad * 2;          // same for every badge
+    const totalBW = pillW * badges.length + gap * (badges.length - 1);
     let bx = cx - totalBW / 2;
 
     badges.forEach((b, i) => {
-      const bw = bws[i];
       if (b.img) {
         ctx.save();
         ctx.shadowColor   = 'rgba(0,0,0,0.18)';
         ctx.shadowBlur    = 6;
         ctx.shadowOffsetY = 2;
         ctx.fillStyle = '#ffffff';
-        rr(bx, y, bw, bh, bh / 2);
+        rr(bx, y, pillW, bh, bh / 2);
         ctx.fill();
         ctx.restore();
-        const logoW = bw - pad * 2;
-        ctx.drawImage(b.img, bx + pad, y + pad, logoW, logoH);
+        // Centre logo horizontally inside the fixed-width pill
+        const logoW = logoWs[i];
+        const lx    = bx + (pillW - logoW) / 2;
+        ctx.drawImage(b.img, lx, y + pad, logoW, logoH);
       } else {
-        b.fallback(bx, y, bw, bh);
+        b.fallback(bx, y, pillW, bh);
       }
-      bx += bw + gap;
+      bx += pillW + gap;
     });
     y += bh;
   }
@@ -889,7 +893,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   const cfg      = SERVICE_CFG[data.mode] || {};
   const pc       = /^#[0-9a-fA-F]{6}$/.test(data.primaryColor||'') ? data.primaryColor : (typeDef.defaultColor || '#1a73e8');
   const bgColor  = /^#[0-9a-fA-F]{6}$/.test(data.bgColor||'')      ? data.bgColor      : '#ffffff';
-  const brandName = data.brandName || typeDef.getLabel && typeDef.getLabel(data) || data.mode;
+  const brandName = data.brandName || (typeDef.getLabel && typeDef.getLabel(data)) || data.mode;
   const tagline  = (data.tagline || '').trim();
 
   function luma(hex) {
@@ -901,9 +905,8 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   const muteCol  = bgDark ? 'rgba(255,255,255,0.55)' : pc;
   const divAlpha = bgDark ? 0.25 : 0.13;
 
-  // With user logo → same tall card as UPI; without → compact
-  const W=500, H=userLogoImg ? 1100 : 740, M=12, SC=2;
-  const QS = userLogoImg ? 380 : 340;
+  const W=500, M=12, SC=2, QS=380;
+  const H = userLogoImg ? 1100 : 640;
   const out = document.createElement('canvas');
   out.width=(W+M*2)*SC; out.height=(H+M*2)*SC;
   const ctx=out.getContext('2d');
@@ -919,41 +922,6 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
     ctx.closePath();
   }
 
-  /* ── Trust icons (same as UPI card) ── */
-  function iconShield(ix,iy,is,col){
-    ctx.save(); ctx.strokeStyle=col; ctx.lineWidth=1.6; ctx.lineJoin='round'; ctx.lineCap='round';
-    ctx.beginPath();
-    ctx.moveTo(ix+is*.50,iy);
-    ctx.lineTo(ix+is*.95,iy+is*.26); ctx.lineTo(ix+is*.95,iy+is*.58);
-    ctx.bezierCurveTo(ix+is*.95,iy+is*.82,ix+is*.50,iy+is,ix+is*.50,iy+is);
-    ctx.bezierCurveTo(ix+is*.05,iy+is*.82,ix+is*.05,iy+is*.58,ix+is*.05,iy+is*.58);
-    ctx.lineTo(ix+is*.05,iy+is*.26); ctx.closePath(); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(ix+is*.30,iy+is*.52); ctx.lineTo(ix+is*.46,iy+is*.68); ctx.lineTo(ix+is*.72,iy+is*.38); ctx.stroke();
-    ctx.restore();
-  }
-  function iconBolt(ix,iy,is,col){
-    ctx.save(); ctx.fillStyle=col;
-    ctx.beginPath();
-    ctx.moveTo(ix+is*.60,iy); ctx.lineTo(ix+is*.26,iy+is*.50);
-    ctx.lineTo(ix+is*.48,iy+is*.50); ctx.lineTo(ix+is*.38,iy+is);
-    ctx.lineTo(ix+is*.74,iy+is*.50); ctx.lineTo(ix+is*.52,iy+is*.50);
-    ctx.closePath(); ctx.fill(); ctx.restore();
-  }
-  function iconThumb(ix,iy,is,col){
-    ctx.save(); ctx.strokeStyle=col; ctx.lineWidth=1.6; ctx.lineJoin='round'; ctx.lineCap='round';
-    ctx.beginPath();
-    ctx.moveTo(ix+is*.10,iy+is*.46); ctx.lineTo(ix+is*.10,iy+is*.96);
-    ctx.lineTo(ix+is*.38,iy+is*.96); ctx.lineTo(ix+is*.38,iy+is*.46);
-    ctx.lineTo(ix+is*.38,iy+is*.30);
-    ctx.arc(ix+is*.55,iy+is*.18,is*.20,Math.PI,0,false);
-    ctx.lineTo(ix+is*.75,iy+is*.46);
-    ctx.lineTo(ix+is*.94,iy+is*.46); ctx.lineTo(ix+is*.94,iy+is*.92);
-    ctx.lineTo(ix+is*.38,iy+is*.92); ctx.stroke();
-    ctx.globalAlpha=0.5;
-    [.60,.72,.84].forEach(t=>{ctx.beginPath();ctx.moveTo(ix+is*.38,iy+is*t);ctx.lineTo(ix+is*.94,iy+is*t);ctx.stroke();});
-    ctx.restore();
-  }
-
   // Card shadow + background
   ctx.shadowColor='rgba(0,0,0,0.22)'; ctx.shadowBlur=28; ctx.shadowOffsetY=8;
   ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
@@ -963,25 +931,13 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
 
   let y = M+22;
 
-  // ── USER LOGO (if uploaded) ───────────────────────────────────────
+  // ── USER LOGO (if uploaded) — dominant block, same as UPI card ────
   if (userLogoImg) {
     const maxH=350, maxW=W*0.82;
     const sc=Math.min(maxH/userLogoImg.naturalHeight, maxW/userLogoImg.naturalWidth);
     const lw=Math.round(userLogoImg.naturalWidth*sc), lh=Math.round(userLogoImg.naturalHeight*sc);
     ctx.drawImage(userLogoImg, cx-lw/2, y, lw, lh);
     y += lh+18;
-  } else if (svcLogoImg) {
-    // No user logo → show small service icon at top
-    const iconSz=64;
-    ctx.save();
-    ctx.shadowColor='rgba(0,0,0,0.12)'; ctx.shadowBlur=8; ctx.shadowOffsetY=3;
-    ctx.beginPath(); ctx.arc(cx, y+iconSz/2, iconSz/2+2, 0, Math.PI*2); ctx.fillStyle='#ffffff'; ctx.fill();
-    ctx.restore();
-    ctx.save();
-    ctx.beginPath(); ctx.arc(cx, y+iconSz/2, iconSz/2, 0, Math.PI*2); ctx.clip();
-    ctx.drawImage(svcLogoImg, cx-iconSz/2, y, iconSz, iconSz);
-    ctx.restore();
-    y += iconSz+14;
   }
 
   // ── BRAND NAME ────────────────────────────────────────────────────
@@ -992,7 +948,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   ctx.fillText(brandName.toUpperCase(), cx, y);
   y += fs+8;
 
-  // ── TAGLINE or divider ────────────────────────────────────────────
+  // ── TAGLINE or thin divider ───────────────────────────────────────
   if (tagline) {
     const tl=tagline.toUpperCase();
     ctx.font='12px sans-serif';
@@ -1009,7 +965,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   }
   y += 20;
 
-  // ── ACTION HEADER ─────────────────────────────────────────────────
+  // ── ACTION HEADER with flanking lines ────────────────────────────
   y += 12;
   const spTxt = cfg.actionText || 'SCAN QR CODE';
   ctx.font='bold 16px sans-serif'; ctx.fillStyle=textCol; ctx.textBaseline='top';
@@ -1034,14 +990,16 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
 
-  // ── LOGO OVERLAY in QR centre ─────────────────────────────────────
+  // ── SERVICE LOGO in QR centre (circular clip) ─────────────────────
   const overlayImg = userLogoImg || svcLogoImg;
   if (overlayImg) {
-    const os=Math.round(QS*0.22);
-    const ox=qbX+qbPad+(QS-os)/2, oy=qbY+qbPad+(QS-os)/2;
-    ctx.fillStyle='#ffffff'; rr(ox-5,oy-5,os+10,os+10,7); ctx.fill();
-    ctx.save(); rr(ox,oy,os,os,5); ctx.clip();
-    ctx.drawImage(overlayImg,ox,oy,os,os); ctx.restore();
+    const os = Math.round(QS * 0.22);
+    const ox = qbX+qbPad+(QS-os)/2, oy = qbY+qbPad+(QS-os)/2;
+    ctx.fillStyle='#ffffff'; rr(ox-5,oy-5,os+10,os+10,os/2+5); ctx.fill();
+    ctx.save();
+    ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip();
+    ctx.drawImage(overlayImg, ox, oy, os, os);
+    ctx.restore();
   }
   y = qbY+qbSz+14;
 
@@ -1049,66 +1007,12 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   const infoText = cfg.infoText ? cfg.infoText(data) : (brandName || data.mode);
   const pillH=36, pillW=W-60;
   ctx.fillStyle=pc; rr(M+30,y,pillW,pillH,pillH/2); ctx.fill();
-  ctx.fillStyle='#ffffff'; ctx.font='900 18px monospace'; ctx.textBaseline='middle';
+  ctx.fillStyle='#ffffff'; ctx.font='900 18px monospace'; ctx.textBaseline='middle'; ctx.textAlign='center';
   let piT=infoText;
   while(ctx.measureText(piT).width>pillW-32&&piT.length>4) piT=piT.slice(0,-1);
   if(piT!==infoText) piT+='…';
   ctx.fillText(piT, cx, y+pillH/2);
-  y += pillH+10;
 
-  // ── SERVICE BADGE ─────────────────────────────────────────────────
-  if (svcLogoImg) {
-    const bh=40, iconSz=bh-8;
-    ctx.font=`700 ${Math.round(bh*0.38)}px sans-serif`;
-    const label = typeDef.label || data.mode;
-    const labelW = ctx.measureText(label).width;
-    const bw = iconSz + 12 + labelW + 16; // icon + gap + text + padding
-    const bx = cx - bw/2;
-    // pill bg
-    ctx.save();
-    ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=6; ctx.shadowOffsetY=2;
-    ctx.fillStyle='#ffffff'; rr(bx,y,bw,bh,bh/2); ctx.fill();
-    ctx.restore();
-    // service icon clipped to circle
-    const iconX=bx+8, iconY=y+(bh-iconSz)/2;
-    ctx.save();
-    ctx.beginPath(); ctx.arc(iconX+iconSz/2, iconY+iconSz/2, iconSz/2, 0, Math.PI*2); ctx.clip();
-    ctx.drawImage(svcLogoImg, iconX, iconY, iconSz, iconSz);
-    ctx.restore();
-    // label
-    ctx.fillStyle=pc;
-    ctx.font=`700 ${Math.round(bh*0.38)}px sans-serif`;
-    ctx.textAlign='left'; ctx.textBaseline='middle';
-    ctx.fillText(label, iconX+iconSz+8, y+bh/2);
-  }
-  y += 48;
-
-  // ── FOOTER ────────────────────────────────────────────────────────
-  const footH=56, footY=M+H-footH;
-  ctx.fillStyle=pc;
-  ctx.beginPath();
-  ctx.moveTo(M,footY); ctx.lineTo(M+W,footY);
-  ctx.lineTo(M+W,M+H-20); ctx.quadraticCurveTo(M+W,M+H,M+W-20,M+H);
-  ctx.lineTo(M+20,M+H); ctx.quadraticCurveTo(M,M+H,M,M+H-20);
-  ctx.closePath(); ctx.fill();
-  {
-    const fcy=footY+footH/2, icSz=footH*0.40, icY=fcy-icSz/2;
-    const trustFont=`bold 11px sans-serif`;
-    ctx.font=trustFont;
-    const items=[{label:'SECURE',draw:iconShield},{label:'FAST',draw:iconBolt},{label:'RELIABLE',draw:iconThumb}];
-    const sep='  |  ', sepW=ctx.measureText(sep).width;
-    const itemWidths=items.map(it=>icSz+4+ctx.measureText(it.label).width);
-    const totalTW=itemWidths.reduce((s,w)=>s+w,0)+sepW*(items.length-1);
-    let tx=cx-totalTW/2;
-    ctx.fillStyle='#ffffff'; ctx.textBaseline='middle';
-    items.forEach((it,i)=>{
-      it.draw(tx,icY,icSz,'#ffffff');
-      ctx.font=trustFont; ctx.fillStyle='#ffffff'; ctx.textAlign='left';
-      ctx.fillText(it.label, tx+icSz+4, fcy);
-      tx+=itemWidths[i];
-      if(i<items.length-1){ctx.globalAlpha=0.45;ctx.fillText(sep,tx,fcy);ctx.globalAlpha=1;tx+=sepW;}
-    });
-  }
   ctx.restore();
   return out.toDataURL('image/png');
 }
