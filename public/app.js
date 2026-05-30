@@ -76,6 +76,8 @@ let state = {
   logoDataUrl:       null,
   logoType:          null,
   openscadAvailable: false,
+  lastCard:          null,   // { canvas, layout } from the most recent successful build
+  qrMatrix:          null,   // { size, data } base64 from the server, or null offline
 };
 
 /* ── Payment badge image loader (cached) ────────────────────────── */
@@ -226,6 +228,7 @@ function getFormData() {
 
 /* ── Generate ───────────────────────────────────────────────────── */
 async function generate() {
+  state.lastCard = null;
   const data    = getFormData();
   const typeDef = QR_TYPES[data.mode];
   const err     = typeDef ? typeDef.validate(data) : null;
@@ -245,14 +248,15 @@ async function generate() {
       throw new Error(e.error || 'Server error');
     }
     const result = await res.json();
+    state.qrMatrix = result.qrMatrix || null;
     state.scadContent = result.scadFile;
     state.isZip       = result.isZip;
     state.filename    = result.filename || 'qr';
 
     let displayPng = result.pngBase64;
     if (result.canvasMissing) {
-      const cardDataUrl = await buildCardFromPlainQR('data:image/png;base64,' + result.pngBase64, data);
-      displayPng = cardDataUrl.replace(/^data:image\/png;base64,/, '');
+      const card = await buildCardFromPlainQR('data:image/png;base64,' + result.pngBase64, data);
+      displayPng = card.dataUrl.replace(/^data:image\/png;base64,/, '');
     }
     state.pngBase64 = displayPng;
 
@@ -287,16 +291,21 @@ async function buildFinalCard(qrElement, data) {
       img.src = data.logoDataUrl;
     });
   }
+  let result;
   if (data.mode === 'upi') {
-    return buildUpiCard(qrElement, userLogoImg, data);
+    result = await buildUpiCard(qrElement, userLogoImg, data);
+  } else {
+    const typeDef    = QR_TYPES[data.mode];
+    const svcLogoImg = typeDef && typeDef.logoName ? await loadBadge(typeDef.logoName) : null;
+    result = await buildServiceCard(qrElement, userLogoImg, svcLogoImg, data);
   }
-  const typeDef    = QR_TYPES[data.mode];
-  const svcLogoImg = typeDef && typeDef.logoName ? await loadBadge(typeDef.logoName) : null;
-  return buildServiceCard(qrElement, userLogoImg, svcLogoImg, data);
+  state.lastCard = { canvas: result.canvas, layout: result.layout };
+  return result;
 }
 
 /* ── Client-side fallback ───────────────────────────────────────── */
 async function generateClientSide(data) {
+  state.qrMatrix = null;
   if (!window.QRCode) {
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js');
   }
@@ -327,7 +336,8 @@ async function generateClientSide(data) {
     return;
   }
 
-  const pngDataURL = await buildFinalCard(qrCanvas, data);
+  const card = await buildFinalCard(qrCanvas, data);
+  const pngDataURL = card.dataUrl;
   document.body.removeChild(tmpDiv);
 
   state.pngBase64   = pngDataURL.replace(/^data:image\/png;base64,/, '');
@@ -741,6 +751,12 @@ async function buildUpiCard(qrEl, logoImg, data) {
   ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
 
+  // Device-pixel rect of the QR field (canvas is scaled by SC), for the 3D relief.
+  const qrRect = {
+    x: (qbX + qbPad) * SC, y: (qbY + qbPad) * SC,
+    w: QS * SC, h: QS * SC,
+  };
+
   // Logo overlay — 22% of QS, square with rounded corners
   if (logoImg) {
     const os=Math.round(QS*0.22);
@@ -855,7 +871,11 @@ async function buildUpiCard(qrEl, logoImg, data) {
   }
 
   ctx.restore();
-  return out.toDataURL('image/png');
+  return {
+    dataUrl: out.toDataURL('image/png'),
+    canvas: out,
+    layout: { qrRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
+  };
 }
 
 /* ── Per-mode config for service cards ──────────────────────────── */
@@ -990,6 +1010,12 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
 
+  // Device-pixel rect of the QR field (canvas is scaled by SC), for the 3D relief.
+  const qrRect = {
+    x: (qbX + qbPad) * SC, y: (qbY + qbPad) * SC,
+    w: QS * SC, h: QS * SC,
+  };
+
   // ── SERVICE LOGO in QR centre (circular clip) ─────────────────────
   const overlayImg = userLogoImg || svcLogoImg;
   if (overlayImg) {
@@ -1014,7 +1040,11 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   ctx.fillText(piT, cx, y+pillH/2);
 
   ctx.restore();
-  return out.toDataURL('image/png');
+  return {
+    dataUrl: out.toDataURL('image/png'),
+    canvas: out,
+    layout: { qrRect, paletteHints: [pc, '#ffffff', '#000000'] },
+  };
 }
 
 /* ── Client-side card renderer (standalone fallback) ────────────── */
