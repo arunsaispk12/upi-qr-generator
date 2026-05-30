@@ -21,7 +21,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
  * embedded logo can occupy it — exactly like the card's white logo backing.
  * @returns {{ group: THREE.Group, boxCount: number }}
  */
-export function buildSharpQr(matrix, qrRect, { cellHeightMM, baseZ, quietModules = 1, logoRect = null }) {
+export function buildSharpQr(matrix, qrRect, { cellHeightMM, baseZ, quietModules = 1, logoRect = null, logoShape = 'rect', moduleColor = 0x000000 }) {
   const group = new THREE.Group();
   const size = matrix.size;
   const cellMM = qrRect.w / (size + 2 * quietModules);
@@ -31,9 +31,17 @@ export function buildSharpQr(matrix, qrRect, { cellHeightMM, baseZ, quietModules
   field.position.set(qrRect.x + qrRect.w/2, -(qrRect.y + qrRect.h/2), baseZ/2);
   group.add(field);
 
-  const inLogo = (px, py) => logoRect &&
-    px >= logoRect.x && px <= logoRect.x + logoRect.w &&
-    py >= logoRect.y && py <= logoRect.y + logoRect.h;
+  // Skip modules under the logo backing. Service cards use a circular backing,
+  // UPI a rounded square — carve the matching shape so the centre is clean.
+  const lcx = logoRect && logoRect.x + logoRect.w/2;
+  const lcy = logoRect && logoRect.y + logoRect.h/2;
+  const lr2 = logoRect && (logoRect.w/2) * (logoRect.w/2);
+  const inLogo = (px, py) => {
+    if (!logoRect) return false;
+    if (logoShape === 'circle') return (px-lcx)**2 + (py-lcy)**2 <= lr2;
+    return px >= logoRect.x && px <= logoRect.x + logoRect.w &&
+           py >= logoRect.y && py <= logoRect.y + logoRect.h;
+  };
 
   const boxes = [];
   for (let row = 0; row < size; row++) {
@@ -51,7 +59,7 @@ export function buildSharpQr(matrix, qrRect, { cellHeightMM, baseZ, quietModules
   if (n > 0) {
     const merged = mergeGeometries(boxes, false);
     boxes.forEach(b => b.dispose());
-    group.add(new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ color: 0x000000 })));
+    group.add(new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ color: moduleColor })));
   }
   return { group, boxCount: n };
 }
@@ -117,10 +125,14 @@ export function build(canvas, layout, matrix, opts = {}) {
   const { palette, labels } = quantize(img, k);
   const baseIdx = dominantLabel(labels, k);
 
-  const plate = new THREE.Mesh(
-    new THREE.BoxGeometry(w*pxToMM, h*pxToMM, baseT),
+  // Rounded-corner base plate (matches the card's rounded rectangle) — a finished
+  // plaque look rather than a hard-edged slab.
+  const plateW = w*pxToMM, plateH = h*pxToMM, plateR = plateW * 0.04;
+  const plateGeo = new THREE.ExtrudeGeometry(roundedRectShape(plateW, plateH, plateR),
+    { depth: baseT, bevelEnabled: false });
+  const plate = new THREE.Mesh(plateGeo,
     new THREE.MeshStandardMaterial({ color: rgbHex(palette[baseIdx]) }));
-  plate.position.set(w*pxToMM/2, -h*pxToMM/2, baseT/2);
+  plate.position.set(plateW/2, -plateH/2, 0); // centred shape → align to relief frame
   group.add(plate);
 
   for (let c = 0; c < k; c++) {
@@ -144,11 +156,13 @@ export function build(canvas, layout, matrix, opts = {}) {
   // colour relief from the (un-blanked) source canvas — matching the card's
   // logo-in-QR-centre treatment (e.g. the bhuvis_qr.png emblem).
   const lr = layout.logoRect;
+  const logoShape = layout.logoShape || 'rect';
   const logoRectMM = lr && { x: lr.x*scale*pxToMM, y: lr.y*scale*pxToMM, w: lr.w*scale*pxToMM, h: lr.h*scale*pxToMM };
   const { group: qrGroup } = buildSharpQr(matrix, qrRectMM,
-    { cellHeightMM: layerH, baseZ: layerH, logoRect: logoRectMM });
+    { cellHeightMM: layerH, baseZ: layerH, logoRect: logoRectMM, logoShape,
+      moduleColor: layout.qrColor || 0x000000 });
   if (lr) {
-    try { buildCenterLogo(canvas, lr, logoRectMM, layerH).children.forEach(m => qrGroup.add(m)); }
+    try { buildCenterLogo(canvas, lr, logoRectMM, layerH, logoShape).children.forEach(m => qrGroup.add(m)); }
     catch (e) { console.warn('centre logo skipped', e.message); }
   }
   qrGroup.position.z = baseT;
@@ -163,14 +177,26 @@ export function build(canvas, layout, matrix, opts = {}) {
  * the remaining clusters extrude as the raised logo. Returns a THREE.Group whose
  * meshes sit at z=heightMM (on top of the QR field), in qrRectMM coordinates.
  */
-function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM) {
-  const work = 110;
+function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, logoShape = 'rect') {
+  const work = 160; // higher res → crisper logo silhouette
   const cc = document.createElement('canvas'); cc.width = work; cc.height = work;
   const cx = cc.getContext('2d');
   cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, work, work); // flatten transparency to white
   cx.drawImage(srcCanvas, logoRectDev.x, logoRectDev.y, logoRectDev.w, logoRectDev.h, 0, 0, work, work);
+  // Service cards use a circular logo backing: mask the crop to a circle so the
+  // square corners don't extrude as stray relief.
+  if (logoShape === 'circle') {
+    cx.globalCompositeOperation = 'destination-in';
+    cx.beginPath(); cx.arc(work/2, work/2, work/2, 0, Math.PI*2); cx.fill();
+    cx.globalCompositeOperation = 'source-over';
+    cx.fillStyle = '#ffffff';
+    cx.save(); cx.beginPath();
+    cx.rect(0,0,work,work); cx.arc(work/2, work/2, work/2, 0, Math.PI*2); cx.fill('evenodd');
+    cx.restore();
+  }
   const img = cx.getImageData(0, 0, work, work);
-  const { palette, labels } = quantize(img, 3);
+  const k = 4; // more clusters → more faithful logo colours
+  const { palette, labels } = quantize(img, k);
   const luma = ([r, g, b]) => 0.299*r + 0.587*g + 0.114*b;
   let bg = 0, best = -1;
   palette.forEach((p, i) => { const l = luma(p); if (l > best) { best = l; bg = i; } });
@@ -188,6 +214,22 @@ function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM) {
     } catch (e) { /* skip empty/failed cluster */ }
   }
   return grp;
+}
+
+/** Centred rounded-rectangle THREE.Shape (origin at centre), for the base plate. */
+function roundedRectShape(w, h, r) {
+  r = Math.min(r, w/2, h/2);
+  const s = new THREE.Shape();
+  s.moveTo(-w/2 + r, -h/2);
+  s.lineTo(w/2 - r, -h/2);
+  s.quadraticCurveTo(w/2, -h/2, w/2, -h/2 + r);
+  s.lineTo(w/2, h/2 - r);
+  s.quadraticCurveTo(w/2, h/2, w/2 - r, h/2);
+  s.lineTo(-w/2 + r, h/2);
+  s.quadraticCurveTo(-w/2, h/2, -w/2, h/2 - r);
+  s.lineTo(-w/2, -h/2 + r);
+  s.quadraticCurveTo(-w/2, -h/2, -w/2 + r, -h/2);
+  return s;
 }
 
 function rgbHex([r,g,b]) { return (r<<16)|(g<<8)|b; }

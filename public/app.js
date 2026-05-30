@@ -283,7 +283,29 @@ async function buildCardFromPlainQR(qrDataUrl, data) {
   return buildFinalCard(qrImg, data);
 }
 
+/* Render a crisp QR straight from the server module matrix in the chosen colour,
+ * so the card's QR is byte-identical (data + 1-module quiet zone + colour) to the
+ * QR the 3D relief rebuilds from the same matrix. */
+function matrixToCanvas(m, color, modulePx, quiet) {
+  modulePx = modulePx || 8; quiet = (quiet == null) ? 1 : quiet;
+  const bytes = Uint8Array.from(atob(m.data), c => c.charCodeAt(0));
+  const dim = (m.size + quiet*2) * modulePx;
+  const cv = document.createElement('canvas'); cv.width = cv.height = dim;
+  const x = cv.getContext('2d');
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, dim, dim);
+  x.fillStyle = /^#[0-9a-fA-F]{6}$/.test(color||'') ? color : '#1a1a2e';
+  for (let row = 0; row < m.size; row++) for (let col = 0; col < m.size; col++) {
+    if (bytes[row*m.size + col] !== 1) continue;
+    x.fillRect((quiet+col)*modulePx, (quiet+row)*modulePx, modulePx, modulePx);
+  }
+  return cv;
+}
+
 async function buildFinalCard(qrElement, data) {
+  // Prefer a matrix-rendered QR in the chosen colour so the card matches the 3D.
+  if (state.qrMatrix) {
+    try { qrElement = matrixToCanvas(state.qrMatrix, data.qrColor); } catch (e) { /* keep passed qrElement */ }
+  }
   let userLogoImg = null;
   if (data.logoDataUrl) {
     userLogoImg = await new Promise(resolve => {
@@ -700,7 +722,7 @@ async function buildUpiCard(qrEl, logoImg, data) {
 
   // Vertically balance content when there's no dominant top logo, so the
   // unified 5×11 card isn't top-heavy (footer stays bottom-anchored).
-  let y = M+22 + (logoImg ? 0 : 200);
+  let y = M+22 + (logoImg ? 0 : 150);
 
   // ── LOGO — dominant 3.5" (350px) block ───────────────────────────
   if (logoImg) {
@@ -754,8 +776,8 @@ async function buildUpiCard(qrEl, logoImg, data) {
   ctx.fillText('VIA UPI', cx, y);
   y += 16;
 
-  // ── QR BOX — QS=380 (3.8"), 15mm quiet zone ───────────────────────
-  const QS=380, qbPad=10, qbSz=QS+qbPad*2;
+  // ── QR BOX — bigger when there's no top logo, to fill the 5×11 card ──
+  const QS=logoImg?380:480, qbPad=10, qbSz=QS+qbPad*2;
   const qbX=M+(W-qbSz)/2, qbY=y+8;
   ctx.strokeStyle=pc; ctx.lineWidth=3;
   rr(qbX,qbY,qbSz,qbSz,14); ctx.stroke();
@@ -886,10 +908,12 @@ async function buildUpiCard(qrEl, logoImg, data) {
   }
 
   ctx.restore();
+  const qrCol = /^#[0-9a-fA-F]{6}$/.test(data.qrColor||'') ? data.qrColor : '#1a1a2e';
   return {
     dataUrl: out.toDataURL('image/png'),
     canvas: out,
-    layout: { qrRect, logoRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
+    layout: { qrRect, logoRect, logoShape: 'rect', qrColor: qrCol,
+              paletteHints: [pc, bgColor, '#ffffff', qrCol] },
   };
 }
 
@@ -940,7 +964,8 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   const muteCol  = bgDark ? 'rgba(255,255,255,0.55)' : pc;
   const divAlpha = bgDark ? 0.25 : 0.13;
 
-  const W=500, M=12, SC=2, QS=380;
+  const W=500, M=12, SC=2;
+  const QS = userLogoImg ? 380 : 480;   // bigger QR when no top logo, to fill 5×11
   const H = 1100;   // unified 5×11 for ALL QR types
   const out = document.createElement('canvas');
   out.width=(W+M*2)*SC; out.height=(H+M*2)*SC;
@@ -966,7 +991,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
 
   // Vertically balance content when there's no dominant top logo (service
   // cards have no bottom footer), so the unified 5×11 card isn't top-heavy.
-  let y = M+22 + (userLogoImg ? 0 : 250);
+  let y = M+22 + (userLogoImg ? 0 : 200);
 
   // ── USER LOGO (if uploaded) — dominant block, same as UPI card ────
   if (userLogoImg) {
@@ -1060,10 +1085,12 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   ctx.fillText(piT, cx, y+pillH/2);
 
   ctx.restore();
+  const qrCol = /^#[0-9a-fA-F]{6}$/.test(data.qrColor||'') ? data.qrColor : '#1a1a2e';
   return {
     dataUrl: out.toDataURL('image/png'),
     canvas: out,
-    layout: { qrRect, logoRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
+    layout: { qrRect, logoRect, logoShape: 'circle', qrColor: qrCol,
+              paletteHints: [pc, bgColor, '#ffffff', qrCol] },
   };
 }
 
