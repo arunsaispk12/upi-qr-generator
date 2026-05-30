@@ -92,8 +92,13 @@ export function build(canvas, layout, matrix, opts = {}) {
     } catch (e) { console.warn('relief layer skipped', c, e.message); }
   }
 
+  // QR sits ON TOP of the base plate: a thin white field (layerH) lifted to z=baseT
+  // with black modules above it. Using baseZ=baseT here would bury the white field
+  // inside the base plate (overlapping volumes / coplanar faces) — wrong for a
+  // one-object-per-colour 3MF and causes z-fighting in preview.
   const qrRectMM = { x: r.x*scale*pxToMM, y: r.y*scale*pxToMM, w: r.w*scale*pxToMM, h: r.h*scale*pxToMM };
-  const { group: qrGroup } = buildSharpQr(matrix, qrRectMM, { cellHeightMM: layerH, baseZ: baseT });
+  const { group: qrGroup } = buildSharpQr(matrix, qrRectMM, { cellHeightMM: layerH, baseZ: layerH });
+  qrGroup.position.z = baseT;
   group.add(qrGroup);
   return group;
 }
