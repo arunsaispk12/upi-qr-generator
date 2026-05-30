@@ -56,9 +56,11 @@ export function maskForColor(labels, colorIndex, { width, height }) {
 /**
  * Contour a binary mask and extrude it.
  * d3-contour returns GeoJSON MultiPolygons: each polygon is [outerRing, ...holeRings].
- * Outer rings are CCW in pixel/y-down space; the Y-flip `(height - y)` below reverses
+ * Outer rings are CCW in pixel/y-down space; the Y negation `-y` below reverses
  * winding into THREE's y-up space (outer→CW, holes→CCW), which is exactly the opposite
- * winding THREE.Shape needs for holes to be subtracted correctly.
+ * winding THREE.Shape needs for holes to be subtracted correctly. Using `-y` (not
+ * `height - y`) keeps the relief in the same [-height, 0] band as the base plate and
+ * the sharp QR (which use `-py`), so all layers stay coplanar on one plaque.
  * @param {number} [simplifyTol=0] - Reserved for future polygon simplification; currently unused.
  * @returns {ExtrudeGeometry}
  */
@@ -71,13 +73,13 @@ export function maskToGeometry(mask, { width, height, heightMM, pxToMM = 1, simp
       const outer = ring[0]; // ring[0] = outer boundary, ring[1..] = holes
       const shape = new Shape();
       outer.forEach(([x, y], i) => i === 0
-        ? shape.moveTo(x * pxToMM, (height - y) * pxToMM)
-        : shape.lineTo(x * pxToMM, (height - y) * pxToMM));
+        ? shape.moveTo(x * pxToMM, -y * pxToMM)
+        : shape.lineTo(x * pxToMM, -y * pxToMM));
       for (let h = 1; h < ring.length; h++) {
         const path = new Path();
         ring[h].forEach(([x, y], i) => i === 0
-          ? path.moveTo(x * pxToMM, (height - y) * pxToMM)
-          : path.lineTo(x * pxToMM, (height - y) * pxToMM));
+          ? path.moveTo(x * pxToMM, -y * pxToMM)
+          : path.lineTo(x * pxToMM, -y * pxToMM));
         shape.holes.push(path);
       }
       shapes.push(shape);

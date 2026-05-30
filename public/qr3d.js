@@ -96,14 +96,18 @@ export function build(canvas, layout, matrix, opts = {}) {
   const pxToMM = longEdgeMM / Math.max(w, h);
   const group = new THREE.Group();
 
+  // Quantize first so the base plate can take the DOMINANT CLUSTER colour
+  // (e.g. the card's black), not the muddy pixel average that the gold accents
+  // and the blanked-white QR region would skew.
+  const { palette, labels } = quantize(img, k);
+  const baseIdx = dominantLabel(labels, k);
+
   const plate = new THREE.Mesh(
     new THREE.BoxGeometry(w*pxToMM, h*pxToMM, baseT),
-    new THREE.MeshStandardMaterial({ color: rgbHex(dominant(img)) }));
+    new THREE.MeshStandardMaterial({ color: rgbHex(palette[baseIdx]) }));
   plate.position.set(w*pxToMM/2, -h*pxToMM/2, baseT/2);
   group.add(plate);
 
-  const { palette, labels } = quantize(img, k);
-  const baseIdx = dominantLabel(labels, k);
   for (let c = 0; c < k; c++) {
     if (c === baseIdx) continue;
     try {
@@ -128,11 +132,6 @@ export function build(canvas, layout, matrix, opts = {}) {
 }
 
 function rgbHex([r,g,b]) { return (r<<16)|(g<<8)|b; }
-function dominant(img) {
-  let r=0,g=0,b=0,n=img.width*img.height;
-  for (let i=0;i<n;i++){r+=img.data[i*4];g+=img.data[i*4+1];b+=img.data[i*4+2];}
-  return [Math.round(r/n),Math.round(g/n),Math.round(b/n)];
-}
 function dominantLabel(labels, k) {
   const c = new Array(k).fill(0); for (const l of labels) c[l]++;
   return c.indexOf(Math.max(...c));
