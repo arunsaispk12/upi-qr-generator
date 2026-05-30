@@ -7,6 +7,7 @@ const { execFile }       = require('child_process');
 const { QR_TYPES }       = require('./qr-types');
 const { buildSCAD }      = require('./scad-builder');
 const { generateQRCard } = require('./image-generator');
+const { getQrMatrix }    = require('./qr-matrix');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -89,6 +90,7 @@ app.post('/api/generate', async (req, res) => {
     res.json({
       success:       true,
       qrString,
+      qrMatrix:      getQrMatrix(qrString),
       scadFile:      scadResult.isZip
         ? scadResult.content.toString('base64')
         : scadResult.content,
