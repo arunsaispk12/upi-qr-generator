@@ -42,3 +42,27 @@ test('maskToGeometry yields a positive-area, bounded geometry', () => {
   assert.ok(bb.max.x - bb.min.x > 0 && bb.max.y - bb.min.y > 0, 'has footprint');
   assert.ok(bb.max.z - bb.min.z > 0, 'has extrude height');
 });
+
+test('maskToGeometry subtracts an interior hole (donut produces more geometry than solid)', () => {
+  const w = 12, h = 12;
+  // solid 8x8 block
+  const solid = new Uint8Array(w * h);
+  for (let y = 2; y < 10; y++) for (let x = 2; x < 10; x++) solid[y*w+x] = 1;
+  // same block with a 4x4 hole punched out of the centre
+  const donut = Uint8Array.from(solid);
+  for (let y = 4; y < 8; y++) for (let x = 4; x < 8; x++) donut[y*w+x] = 0;
+
+  const gSolid = relief.maskToGeometry(solid, { width: w, height: h, heightMM: 1, pxToMM: 1 });
+  const gDonut = relief.maskToGeometry(donut, { width: w, height: h, heightMM: 1, pxToMM: 1 });
+
+  // Same outer footprint...
+  gSolid.computeBoundingBox(); gDonut.computeBoundingBox();
+  assert.deepStrictEqual(
+    [gDonut.boundingBox.max.x - gDonut.boundingBox.min.x, gDonut.boundingBox.max.y - gDonut.boundingBox.min.y],
+    [gSolid.boundingBox.max.x - gSolid.boundingBox.min.x, gSolid.boundingBox.max.y - gSolid.boundingBox.min.y],
+    'donut keeps the outer footprint');
+  // ...but the hole adds inner-wall + ring-cap triangles, so more vertices.
+  assert.ok(
+    gDonut.attributes.position.count > gSolid.attributes.position.count,
+    'hole adds geometry (inner walls), so donut has more vertices than the solid block');
+});

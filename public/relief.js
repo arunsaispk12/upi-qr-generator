@@ -55,6 +55,11 @@ export function maskForColor(labels, colorIndex, { width, height }) {
 
 /**
  * Contour a binary mask and extrude it.
+ * d3-contour returns GeoJSON MultiPolygons: each polygon is [outerRing, ...holeRings].
+ * Outer rings are CCW in pixel/y-down space; the Y-flip `(height - y)` below reverses
+ * winding into THREE's y-up space (outer→CW, holes→CCW), which is exactly the opposite
+ * winding THREE.Shape needs for holes to be subtracted correctly.
+ * @param {number} [simplifyTol=0] - Reserved for future polygon simplification; currently unused.
  * @returns {ExtrudeGeometry}
  */
 export function maskToGeometry(mask, { width, height, heightMM, pxToMM = 1, simplifyTol = 0 }) {
@@ -63,7 +68,7 @@ export function maskToGeometry(mask, { width, height, heightMM, pxToMM = 1, simp
   const shapes = [];
   for (const multi of polys) {
     for (const ring of multi.coordinates) {
-      const outer = ring[0];
+      const outer = ring[0]; // ring[0] = outer boundary, ring[1..] = holes
       const shape = new Shape();
       outer.forEach(([x, y], i) => i === 0
         ? shape.moveTo(x * pxToMM, (height - y) * pxToMM)
