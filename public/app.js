@@ -78,6 +78,7 @@ let state = {
   openscadAvailable: false,
   lastCard:          null,   // { canvas, layout } from the most recent successful build
   qrMatrix:          null,   // { size, data } base64 from the server, or null offline
+  group3d:           null,   // THREE.Group cached from the last 3D build
 };
 
 /* ── Payment badge image loader (cached) ────────────────────────── */
@@ -107,6 +108,9 @@ document.addEventListener('DOMContentLoaded', () => {
   selectMode('url', document.querySelector('[data-mode="url"]'));
   checkOpenSCAD();
   renderHistory();
+  const a = $('btn3mf'), b = $('btnStlNew');
+  if (a) a.addEventListener('click', download3MF);
+  if (b) b.addEventListener('click', downloadSTLnew);
 });
 
 function injectTypeIcons() {
@@ -230,6 +234,7 @@ function getFormData() {
 async function generate() {
   state.lastCard = null;
   state.qrMatrix = null;
+  state.group3d = null;
   const data    = getFormData();
   const typeDef = QR_TYPES[data.mode];
   const err     = typeDef ? typeDef.validate(data) : null;
@@ -307,6 +312,7 @@ async function buildFinalCard(qrElement, data) {
 /* ── Client-side fallback ───────────────────────────────────────── */
 async function generateClientSide(data) {
   state.qrMatrix = null;
+  state.group3d = null;
   if (!window.QRCode) {
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js');
   }
@@ -390,6 +396,24 @@ function downloadPNG() {
   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
   downloadBlob(new Blob([arr], { type: 'image/png' }), safeName(getFormData()) + '_qr.png');
   showStatus('PNG saved!', 'ok');
+}
+
+async function download3MF() {
+  if (!state.group3d) return;
+  try {
+    const blob = await window.QR3D.export3MF(state.group3d);
+    downloadBlob(blob, safeName(getFormData()) + '_card.3mf');
+    showStatus('3MF downloaded', 'ok');
+  } catch (e) { showStatus('3MF export failed: ' + e.message, 'err'); }
+}
+
+function downloadSTLnew() {
+  if (!state.group3d) return;
+  try {
+    const blob = window.QR3D.exportSTL(state.group3d);
+    downloadBlob(blob, safeName(getFormData()) + '_card.stl');
+    showStatus('STL downloaded', 'ok');
+  } catch (e) { showStatus('STL export failed: ' + e.message, 'err'); }
 }
 
 function downloadSTL() {
@@ -1147,6 +1171,38 @@ function switchTab(name, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   $('tab-' + name).classList.remove('hidden');
   el.classList.add('active');
+  if (name === '3d') show3DTab();
+  else if (window.QR3D) window.QR3D.disposePreview();
+}
+
+function show3DTab() {
+  const msg = $('msg3d');
+  if (!window.QR3D) { msg.textContent = '3D module still loading — try again in a moment.'; return; }
+  if (!state.lastCard || !state.qrMatrix) {
+    msg.textContent = state.qrMatrix ? 'Generate a card first.'
+      : '3D needs the server (offline mode unsupported in this version).';
+    $('btn3mf').disabled = true; $('btnStlNew').disabled = true;
+    return;
+  }
+  try {
+    if (!state.group3d) {
+      const matrix = {
+        size: state.qrMatrix.size,
+        data: Uint8Array.from(atob(state.qrMatrix.data), c => c.charCodeAt(0)),
+      };
+      state.group3d = window.QR3D.build(state.lastCard.canvas, state.lastCard.layout, matrix, {});
+    }
+    window.QR3D.mountPreview(state.group3d, $('viewer3d'));
+    $('btn3mf').disabled = false; $('btnStlNew').disabled = false;
+    msg.textContent = '';
+  } catch (e) {
+    if (e.message === 'NO_WEBGL') {
+      msg.textContent = 'No WebGL on this device — preview unavailable, but downloads still work.';
+      if (state.group3d) { $('btn3mf').disabled = false; $('btnStlNew').disabled = false; }
+    } else {
+      msg.textContent = '3D build failed: ' + e.message;
+    }
+  }
 }
 
 function showStatus(msg, type) {

@@ -265,6 +265,7 @@
     <div class="tabs">
       <button class="tab active" onclick="switchTab('preview',this)">Preview</button>
       <button class="tab" onclick="switchTab('howto',this)">Print Guide</button>
+      <button class="tab" onclick="switchTab('3d',this)">3D Model</button>
     </div>
 
     <div id="tab-preview" class="tab-panel">
@@ -290,6 +291,19 @@
           <div class="how-step"><span class="step-n">5</span><div><strong>Slice and print</strong>Layer height 0.15mm, no supports needed.</div></div>
           <div class="how-step"><span class="step-n">tip</span><div><strong>Two-colour tip</strong>Print base in white up to <code>base_thickness</code> mm, pause and swap to black for raised QR modules.</div></div>
         </div>
+      </div>
+    </div>
+
+    <div id="tab-3d" class="tab-panel hidden">
+      <div class="preview-card">
+        <div class="preview-label">3D Relief Plaque</div>
+        <canvas id="viewer3d" width="480" height="480"></canvas>
+        <p class="hint hint-3d">Drag to rotate · scroll to zoom</p>
+        <div class="export3d">
+          <button class="btn btn-primary" id="btn3mf" disabled>Download 3MF</button>
+          <button class="btn btn-cyan" id="btnStlNew" disabled>Download STL</button>
+        </div>
+        <p id="msg3d" class="hint"></p>
       </div>
     </div>
 
@@ -329,5 +343,6 @@
 </main>
 
 <script src="app.js"></script>
+<script type="module" src="qr3d.js"></script>
 </body>
 </html>

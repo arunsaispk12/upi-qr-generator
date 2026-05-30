@@ -3,6 +3,7 @@ import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { exportTo3MF } from 'three-3mf-exporter';
 import { quantize, maskForColor, maskToGeometry } from './relief.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 /**
  * Sharp QR: white field plate + one merged box mesh for the dark modules,
@@ -158,4 +159,35 @@ export async function export3MFBuffer(group) {
   return Buffer.from(await blob.arrayBuffer());
 }
 
-if (typeof window !== 'undefined') window.QR3D = { build, buildSharpQr, exportSTL, export3MF };
+let _renderer, _controls, _raf;
+/** Mount an interactive WebGL preview of `group` into canvas element `canvasEl`. */
+export function mountPreview(group, canvasEl) {
+  disposePreview();
+  if (typeof WebGLRenderingContext === 'undefined') throw new Error('NO_WEBGL');
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x14142a);
+  const box = new THREE.Box3().setFromObject(group);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  group.position.sub(center); // center at origin
+  scene.add(group);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(1, 1, 2); scene.add(dir);
+
+  const w = canvasEl.clientWidth || 480, h = canvasEl.clientHeight || 480;
+  const cam = new THREE.PerspectiveCamera(45, w / h, 0.1, 5000);
+  cam.position.set(0, 0, Math.max(size.x, size.y, size.z) * 2.2 || 100);
+  _renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true });
+  _renderer.setSize(w, h, false);
+  _controls = new OrbitControls(cam, canvasEl);
+  (function loop() { _raf = requestAnimationFrame(loop); _controls.update(); _renderer.render(scene, cam); })();
+}
+/** Stop and tear down the preview (safe to call when nothing is mounted). */
+export function disposePreview() {
+  if (_raf) cancelAnimationFrame(_raf);
+  if (_controls) _controls.dispose();
+  if (_renderer) _renderer.dispose();
+  _renderer = _controls = _raf = null;
+}
+
+if (typeof window !== 'undefined') window.QR3D = { build, buildSharpQr, exportSTL, export3MF, mountPreview, disposePreview };
