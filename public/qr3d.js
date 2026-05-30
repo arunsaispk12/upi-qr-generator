@@ -1,10 +1,16 @@
 import * as THREE from 'three';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { quantize, maskForColor, maskToGeometry } from './relief.js';
 
 /**
- * Sharp QR: white field plate + one InstancedMesh of boxes for dark modules,
+ * Sharp QR: white field plate + one merged box mesh for the dark modules,
  * positioned within `qrRect` (working-unit rect).
+ *
+ * The dark modules are merged into a single BufferGeometry rather than an
+ * InstancedMesh: three's STL/3MF exporters do NOT expand per-instance matrices,
+ * so an InstancedMesh would serialize as a single cube. A merged geometry
+ * carries every module box into the exported (printable) file.
  * @returns {{ group: THREE.Group, boxCount: number }}
  */
 export function buildSharpQr(matrix, qrRect, { cellHeightMM, baseZ }) {
@@ -16,26 +22,23 @@ export function buildSharpQr(matrix, qrRect, { cellHeightMM, baseZ }) {
   field.position.set(qrRect.x + qrRect.w/2, -(qrRect.y + qrRect.h/2), baseZ/2);
   group.add(field);
 
-  let dark = 0;
-  for (let i = 0; i < matrix.size * matrix.size; i++) if (matrix.data[i] === 1) dark++;
-
-  const inst = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(cellMM, cellMM, cellHeightMM),
-    new THREE.MeshStandardMaterial({ color: 0x000000 }), Math.max(dark, 1));
-  const dummy = new THREE.Object3D();
-  let n = 0;
+  const boxes = [];
   for (let row = 0; row < matrix.size; row++) {
     for (let col = 0; col < matrix.size; col++) {
       if (matrix.data[row * matrix.size + col] !== 1) continue;
       const px = qrRect.x + (col + 0.5) * cellMM;
       const py = qrRect.y + (row + 0.5) * cellMM;
-      dummy.position.set(px, -py, baseZ + cellHeightMM/2);
-      dummy.updateMatrix();
-      inst.setMatrixAt(n++, dummy.matrix);
+      const box = new THREE.BoxGeometry(cellMM, cellMM, cellHeightMM);
+      box.translate(px, -py, baseZ + cellHeightMM/2);
+      boxes.push(box);
     }
   }
-  inst.count = n;
-  group.add(inst);
+  const n = boxes.length;
+  if (n > 0) {
+    const merged = mergeGeometries(boxes, false);
+    boxes.forEach(b => b.dispose());
+    group.add(new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ color: 0x000000 })));
+  }
   return { group, boxCount: n };
 }
 
