@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { exportTo3MF } from 'three-3mf-exporter';
 import { quantize, maskForColor, maskToGeometry } from './relief.js';
 
 /**
@@ -40,6 +41,28 @@ export function buildSharpQr(matrix, qrRect, { cellHeightMM, baseZ }) {
     group.add(new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ color: 0x000000 })));
   }
   return { group, boxCount: n };
+}
+
+/**
+ * Rasterize the QR matrix into RGBA pixels using the SAME row/col→position
+ * mapping as buildSharpQr, for the decode gate. Dark=black, light=white,
+ * with a 4-module quiet zone.
+ * @returns {{ data: Uint8ClampedArray, width: number, height: number }}
+ */
+export function rasterizeQrMatrix(matrix, px) {
+  const q = 4, dim = (matrix.size + q*2) * px;
+  const data = new Uint8ClampedArray(dim * dim * 4);
+  for (let i = 0; i < data.length; i += 4) { data[i]=255; data[i+1]=255; data[i+2]=255; data[i+3]=255; }
+  for (let row = 0; row < matrix.size; row++) {
+    for (let col = 0; col < matrix.size; col++) {
+      if (matrix.data[row*matrix.size + col] !== 1) continue;
+      for (let dy = 0; dy < px; dy++) for (let dx = 0; dx < px; dx++) {
+        const x = (q+col)*px + dx, y = (q+row)*px + dy, idx = (y*dim + x)*4;
+        data[idx]=0; data[idx+1]=0; data[idx+2]=0; data[idx+3]=255;
+      }
+    }
+  }
+  return { data, width: dim, height: dim };
 }
 
 /**
@@ -125,4 +148,14 @@ export async function exportSTLBuffer(group) {
   return Buffer.from(stl.buffer || stl);
 }
 
-if (typeof window !== 'undefined') window.QR3D = { build, buildSharpQr, exportSTL };
+/** Browser: 3MF Blob, one object per colour (Bambu-compatible). */
+export function export3MF(group) {
+  return exportTo3MF(group); // Promise<Blob>
+}
+/** Node-testable: 3MF Buffer. */
+export async function export3MFBuffer(group) {
+  const blob = await exportTo3MF(group);
+  return Buffer.from(await blob.arrayBuffer());
+}
+
+if (typeof window !== 'undefined') window.QR3D = { build, buildSharpQr, exportSTL, export3MF };
