@@ -251,6 +251,14 @@ async function generate() {
     if (result.canvasMissing) {
       const card = await buildCardFromPlainQR('data:image/png;base64,' + result.pngBase64, data);
       displayPng = card.dataUrl.replace(/^data:image\/png;base64,/, '');
+    } else {
+      // Server rendered the full card PNG (canvas installed). Still build a
+      // client-side card canvas so the 3D relief has pixels + layout
+      // (buildFinalCard sets state.lastCard). Failure here only disables 3D.
+      try {
+        const qrCanvas = await makeQrCanvas(result.qrString, data.qrColor);
+        await buildFinalCard(qrCanvas, data);
+      } catch (e) { console.warn('3D card build skipped:', e.message); }
     }
     state.pngBase64 = displayPng;
 
@@ -297,43 +305,50 @@ async function buildFinalCard(qrElement, data) {
   return result;
 }
 
-/* ── Client-side fallback ───────────────────────────────────────── */
-async function generateClientSide(data) {
-  state.qrMatrix = null;
-  state.group3d = null;
+/* Render a plain QR code client-side (qrcodejs) and return its <canvas>.
+ * Used by the offline fallback and to build the 3D card canvas when the
+ * server returns a ready-made PNG. Throws on failure. */
+async function makeQrCanvas(qrString, qrColor) {
   if (!window.QRCode) {
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js');
   }
-  const typeDef  = QR_TYPES[data.mode];
-  const qrString = typeDef ? typeDef.buildQrString(data) : data.url || '';
-
   const tmpDiv = Object.assign(document.createElement('div'),
     { style: 'position:absolute;left:-9999px;top:-9999px;' });
   document.body.appendChild(tmpDiv);
-
   try {
     new QRCode(tmpDiv, {
       text: qrString, width: 300, height: 300,
-      colorDark: data.qrColor || '#1a1a2e', colorLight: '#ffffff',
+      colorDark: qrColor || '#1a1a2e', colorLight: '#ffffff',
       correctLevel: QRCode.CorrectLevel.H,
     });
   } catch (ex) {
     document.body.removeChild(tmpDiv);
-    showStatus('QR generation failed - check your inputs', 'err');
-    return;
+    throw new Error('QR generation failed');
   }
-
   await sleep(200);
   const qrCanvas = tmpDiv.querySelector('canvas');
-  if (!qrCanvas) {
-    document.body.removeChild(tmpDiv);
-    showStatus('QR render failed', 'err');
+  document.body.removeChild(tmpDiv);
+  if (!qrCanvas) throw new Error('QR render failed');
+  return qrCanvas;
+}
+
+/* ── Client-side fallback ───────────────────────────────────────── */
+async function generateClientSide(data) {
+  state.qrMatrix = null;
+  state.group3d = null;
+  const typeDef  = QR_TYPES[data.mode];
+  const qrString = typeDef ? typeDef.buildQrString(data) : data.url || '';
+
+  let qrCanvas;
+  try {
+    qrCanvas = await makeQrCanvas(qrString, data.qrColor);
+  } catch (ex) {
+    showStatus(ex.message + ' - check your inputs', 'err');
     return;
   }
 
   const card = await buildFinalCard(qrCanvas, data);
   const pngDataURL = card.dataUrl;
-  document.body.removeChild(tmpDiv);
 
   state.pngBase64   = pngDataURL.replace(/^data:image\/png;base64,/, '');
   state.scadContent = buildSCADClient(qrString, data);
