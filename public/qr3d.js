@@ -171,13 +171,22 @@ export function mountPreview(group, canvasEl) {
   const size = box.getSize(new THREE.Vector3());
   group.position.sub(center); // center at origin
   scene.add(group);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(1, 1, 2); scene.add(dir);
+  // Bright, multi-directional lighting so a near-black card still reads, and the
+  // raised relief catches highlights/shadows. Hemisphere fill + key/back/side lights.
+  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x404050, 0.8));
+  const key = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(1, 1.5, 2); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.6); fill.position.set(-1.5, -0.5, 1); scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xffffff, 0.5); rim.position.set(0, 0.5, -2); scene.add(rim);
 
   const w = canvasEl.clientWidth || 480, h = canvasEl.clientHeight || 480;
   const cam = new THREE.PerspectiveCamera(45, w / h, 0.1, 5000);
-  cam.position.set(0, 0, Math.max(size.x, size.y, size.z) * 2.2 || 100);
+  // Angled 3/4 view (not straight-on) so the raised relief depth is visible.
+  const dist = (Math.max(size.x, size.y, size.z) || 100) * 1.9;
+  cam.position.set(dist * 0.45, -dist * 0.30, dist * 0.95);
+  cam.lookAt(0, 0, 0);
   _renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true });
+  _renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); // crisp on HiDPI
   _renderer.setSize(w, h, false);
   _controls = new OrbitControls(cam, canvasEl);
   (function loop() { _raf = requestAnimationFrame(loop); _controls.update(); _renderer.render(scene, cam); })();
