@@ -75,7 +75,6 @@ let state = {
   filename:          'qr',
   logoDataUrl:       null,
   logoType:          null,
-  openscadAvailable: false,
   lastCard:          null,   // { canvas, layout } from the most recent successful build
   qrMatrix:          null,   // { size, data } base64 from the server, or null offline
   group3d:           null,   // THREE.Group cached from the last 3D build
@@ -106,7 +105,6 @@ const checked = id => { const el = $(id); return el ? el.classList.contains('on'
 document.addEventListener('DOMContentLoaded', () => {
   injectTypeIcons();
   selectMode('url', document.querySelector('[data-mode="url"]'));
-  checkOpenSCAD();
   renderHistory();
   const a = $('btn3mf'), b = $('btnStlNew');
   if (a) a.addEventListener('click', download3MF);
@@ -123,16 +121,6 @@ function injectTypeIcons() {
     const svg = doc.documentElement;
     if (svg && svg.tagName === 'svg') el.appendChild(svg);
   });
-}
-
-function checkOpenSCAD() {
-  fetch('/api/openscad-status')
-    .then(r => r.json())
-    .then(d => {
-      state.openscadAvailable = d.available;
-      if (d.available) $('stlCard').style.display = '';
-    })
-    .catch(() => {});
 }
 
 /* ── Mode switching ─────────────────────────────────────────────── */
@@ -372,7 +360,6 @@ function renderPreview(src) {
 function enableButtons() {
   $('btnScad').disabled = false;
   $('btnPng').disabled  = false;
-  if (state.openscadAvailable && !state.isZip) $('btnStl').disabled = false;
 }
 
 /* ── Downloads ──────────────────────────────────────────────────── */
@@ -414,24 +401,6 @@ function downloadSTLnew() {
     downloadBlob(blob, safeName(getFormData()) + '_card.stl');
     showStatus('STL downloaded', 'ok');
   } catch (e) { showStatus('STL export failed: ' + e.message, 'err'); }
-}
-
-function downloadSTL() {
-  const data = getFormData();
-  showStatus('Rendering STL (may take up to 2 minutes)...', 'info');
-  $('btnStl').disabled = true;
-  fetch('/api/download/stl', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-    .then(r => r.ok ? r.blob() : r.json().then(e => Promise.reject(new Error(e.error))))
-    .then(blob => {
-      downloadBlob(blob, safeName(data) + '_qr.stl');
-      showStatus('STL downloaded!', 'ok');
-    })
-    .catch(e => showStatus('STL export failed: ' + e.message, 'err'))
-    .finally(() => { $('btnStl').disabled = false; });
 }
 
 /* ── History ────────────────────────────────────────────────────── */

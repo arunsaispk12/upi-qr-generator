@@ -1,9 +1,6 @@
 const express  = require('express');
 const cors     = require('cors');
 const path     = require('path');
-const os       = require('os');
-const fs       = require('fs');
-const { execFile }       = require('child_process');
 const { QR_TYPES }       = require('./qr-types');
 const { buildSCAD }      = require('./scad-builder');
 const { generateQRCard } = require('./image-generator');
@@ -173,72 +170,6 @@ app.post('/api/download/png', async (req, res) => {
     res.send(pngResult.buffer);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/openscad-status', (req, res) => {
-  execFile('openscad', ['--version'], { timeout: 5000 }, (err, stdout, stderr) => {
-    if (err) return res.json({ available: false, version: '' });
-    res.json({ available: true, version: (stdout + stderr).trim().split('\n')[0] });
-  });
-});
-
-app.post('/api/download/stl', async (req, res) => {
-  try {
-    const { mode = 'url' } = req.body;
-    const typeDef = QR_TYPES[mode];
-    if (!typeDef) return res.status(400).json({ error: 'Unknown mode: ' + mode });
-
-    const validationError = typeDef.validate(req.body);
-    if (validationError) return res.status(400).json({ error: validationError });
-
-    const qrString  = typeDef.buildQrString(req.body);
-    const plateOpts = extractPlateOpts(req.body);
-    const brandOpts = extractBrandOpts(req.body);
-
-    const scadResult = await buildSCAD({
-      qrString,
-      payeeName:      req.body.payeeName || brandOpts.brandName || mode,
-      logoType:       brandOpts.logoType,
-      logoSvgContent: brandOpts.logoType === 'svg' ? getSvgContent(brandOpts.logoDataUrl) : null,
-      ...plateOpts,
-    });
-
-    if (scadResult.isZip) {
-      return res.status(400).json({ error: 'STL export with SVG logo requires manual OpenSCAD render' });
-    }
-
-    const stamp    = Date.now();
-    const scadPath = path.join(os.tmpdir(), `qrgen_${stamp}.scad`);
-    const stlPath  = path.join(os.tmpdir(), `qrgen_${stamp}.stl`);
-    fs.writeFileSync(scadPath, scadResult.content);
-
-    execFile('openscad',
-      ['--export-format', 'binstl', '-o', stlPath, scadPath],
-      { timeout: 120000 },
-      (err) => {
-        try { fs.unlinkSync(scadPath); } catch {}
-        if (err) {
-          try { fs.unlinkSync(stlPath); } catch {}
-          return res.status(500).json({ error: 'OpenSCAD render failed: ' + err.message });
-        }
-        const safeName = (req.body.payeeName || brandOpts.brandName || mode)
-          .replace(/\s+/g, '_')
-          .replace(/[^a-z0-9_-]/gi, '')
-          .toLowerCase() || 'qr';
-        res.setHeader('Content-Type', 'application/octet-stream');
-        res.setHeader('Content-Disposition', `attachment; filename="${safeName}_qr.stl"`);
-        const stream = fs.createReadStream(stlPath);
-        stream.pipe(res);
-        stream.on('error', (streamErr) => {
-          try { fs.unlinkSync(stlPath); } catch {}
-          if (!res.headersSent) res.status(500).json({ error: 'Stream error: ' + streamErr.message });
-        });
-        stream.on('close', () => { try { fs.unlinkSync(stlPath); } catch {} });
-      }
-    );
-  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
