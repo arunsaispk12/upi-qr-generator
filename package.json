@@ -19,7 +19,11 @@
     "canvas": "^2.11.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "d3-contour": "^4.0.2",
+    "jsqr": "^1.4.0",
+    "nodemon": "^3.0.1",
+    "three": "^0.184.0",
+    "three-3mf-exporter": "^45.2.0"
   },
   "license": "MIT"
 }
