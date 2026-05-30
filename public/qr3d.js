@@ -166,6 +166,7 @@ export function mountPreview(group, canvasEl) {
   if (typeof WebGLRenderingContext === 'undefined') throw new Error('NO_WEBGL');
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x14142a);
+  group.position.set(0, 0, 0); // undo any offset from a previous mount (no accumulation)
   const box = new THREE.Box3().setFromObject(group);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
