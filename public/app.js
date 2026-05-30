@@ -75,7 +75,9 @@ let state = {
   filename:          'qr',
   logoDataUrl:       null,
   logoType:          null,
-  openscadAvailable: false,
+  lastCard:          null,   // { canvas, layout } from the most recent successful build
+  qrMatrix:          null,   // { size, data } base64 from the server, or null offline
+  group3d:           null,   // THREE.Group cached from the last 3D build
 };
 
 /* ── Payment badge image loader (cached) ────────────────────────── */
@@ -103,8 +105,10 @@ const checked = id => { const el = $(id); return el ? el.classList.contains('on'
 document.addEventListener('DOMContentLoaded', () => {
   injectTypeIcons();
   selectMode('url', document.querySelector('[data-mode="url"]'));
-  checkOpenSCAD();
   renderHistory();
+  const a = $('btn3mf'), b = $('btnStlNew');
+  if (a) a.addEventListener('click', download3MF);
+  if (b) b.addEventListener('click', downloadSTLnew);
 });
 
 function injectTypeIcons() {
@@ -117,16 +121,6 @@ function injectTypeIcons() {
     const svg = doc.documentElement;
     if (svg && svg.tagName === 'svg') el.appendChild(svg);
   });
-}
-
-function checkOpenSCAD() {
-  fetch('/api/openscad-status')
-    .then(r => r.json())
-    .then(d => {
-      state.openscadAvailable = d.available;
-      if (d.available) $('stlCard').style.display = '';
-    })
-    .catch(() => {});
 }
 
 /* ── Mode switching ─────────────────────────────────────────────── */
@@ -226,6 +220,9 @@ function getFormData() {
 
 /* ── Generate ───────────────────────────────────────────────────── */
 async function generate() {
+  state.lastCard = null;
+  state.qrMatrix = null;
+  state.group3d = null;
   const data    = getFormData();
   const typeDef = QR_TYPES[data.mode];
   const err     = typeDef ? typeDef.validate(data) : null;
@@ -245,14 +242,23 @@ async function generate() {
       throw new Error(e.error || 'Server error');
     }
     const result = await res.json();
+    state.qrMatrix = result.qrMatrix || null;
     state.scadContent = result.scadFile;
     state.isZip       = result.isZip;
     state.filename    = result.filename || 'qr';
 
     let displayPng = result.pngBase64;
     if (result.canvasMissing) {
-      const cardDataUrl = await buildCardFromPlainQR('data:image/png;base64,' + result.pngBase64, data);
-      displayPng = cardDataUrl.replace(/^data:image\/png;base64,/, '');
+      const card = await buildCardFromPlainQR('data:image/png;base64,' + result.pngBase64, data);
+      displayPng = card.dataUrl.replace(/^data:image\/png;base64,/, '');
+    } else {
+      // Server rendered the full card PNG (canvas installed). Still build a
+      // client-side card canvas so the 3D relief has pixels + layout
+      // (buildFinalCard sets state.lastCard). Failure here only disables 3D.
+      try {
+        const qrCanvas = await makeQrCanvas(result.qrString, data.qrColor);
+        await buildFinalCard(qrCanvas, data);
+      } catch (e) { console.warn('3D card build skipped:', e.message); }
     }
     state.pngBase64 = displayPng;
 
@@ -287,48 +293,62 @@ async function buildFinalCard(qrElement, data) {
       img.src = data.logoDataUrl;
     });
   }
+  let result;
   if (data.mode === 'upi') {
-    return buildUpiCard(qrElement, userLogoImg, data);
+    result = await buildUpiCard(qrElement, userLogoImg, data);
+  } else {
+    const typeDef    = QR_TYPES[data.mode];
+    const svcLogoImg = typeDef && typeDef.logoName ? await loadBadge(typeDef.logoName) : null;
+    result = await buildServiceCard(qrElement, userLogoImg, svcLogoImg, data);
   }
-  const typeDef    = QR_TYPES[data.mode];
-  const svcLogoImg = typeDef && typeDef.logoName ? await loadBadge(typeDef.logoName) : null;
-  return buildServiceCard(qrElement, userLogoImg, svcLogoImg, data);
+  state.lastCard = { canvas: result.canvas, layout: result.layout };
+  return result;
 }
 
-/* ── Client-side fallback ───────────────────────────────────────── */
-async function generateClientSide(data) {
+/* Render a plain QR code client-side (qrcodejs) and return its <canvas>.
+ * Used by the offline fallback and to build the 3D card canvas when the
+ * server returns a ready-made PNG. Throws on failure. */
+async function makeQrCanvas(qrString, qrColor) {
   if (!window.QRCode) {
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js');
   }
-  const typeDef  = QR_TYPES[data.mode];
-  const qrString = typeDef ? typeDef.buildQrString(data) : data.url || '';
-
   const tmpDiv = Object.assign(document.createElement('div'),
     { style: 'position:absolute;left:-9999px;top:-9999px;' });
   document.body.appendChild(tmpDiv);
-
   try {
     new QRCode(tmpDiv, {
       text: qrString, width: 300, height: 300,
-      colorDark: data.qrColor || '#1a1a2e', colorLight: '#ffffff',
+      colorDark: qrColor || '#1a1a2e', colorLight: '#ffffff',
       correctLevel: QRCode.CorrectLevel.H,
     });
   } catch (ex) {
     document.body.removeChild(tmpDiv);
-    showStatus('QR generation failed - check your inputs', 'err');
-    return;
+    throw new Error('QR generation failed');
   }
-
   await sleep(200);
   const qrCanvas = tmpDiv.querySelector('canvas');
-  if (!qrCanvas) {
-    document.body.removeChild(tmpDiv);
-    showStatus('QR render failed', 'err');
+  document.body.removeChild(tmpDiv);
+  if (!qrCanvas) throw new Error('QR render failed');
+  return qrCanvas;
+}
+
+/* ── Client-side fallback ───────────────────────────────────────── */
+async function generateClientSide(data) {
+  state.qrMatrix = null;
+  state.group3d = null;
+  const typeDef  = QR_TYPES[data.mode];
+  const qrString = typeDef ? typeDef.buildQrString(data) : data.url || '';
+
+  let qrCanvas;
+  try {
+    qrCanvas = await makeQrCanvas(qrString, data.qrColor);
+  } catch (ex) {
+    showStatus(ex.message + ' - check your inputs', 'err');
     return;
   }
 
-  const pngDataURL = await buildFinalCard(qrCanvas, data);
-  document.body.removeChild(tmpDiv);
+  const card = await buildFinalCard(qrCanvas, data);
+  const pngDataURL = card.dataUrl;
 
   state.pngBase64   = pngDataURL.replace(/^data:image\/png;base64,/, '');
   state.scadContent = buildSCADClient(qrString, data);
@@ -355,7 +375,6 @@ function renderPreview(src) {
 function enableButtons() {
   $('btnScad').disabled = false;
   $('btnPng').disabled  = false;
-  if (state.openscadAvailable && !state.isZip) $('btnStl').disabled = false;
 }
 
 /* ── Downloads ──────────────────────────────────────────────────── */
@@ -381,22 +400,22 @@ function downloadPNG() {
   showStatus('PNG saved!', 'ok');
 }
 
-function downloadSTL() {
-  const data = getFormData();
-  showStatus('Rendering STL (may take up to 2 minutes)...', 'info');
-  $('btnStl').disabled = true;
-  fetch('/api/download/stl', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-    .then(r => r.ok ? r.blob() : r.json().then(e => Promise.reject(new Error(e.error))))
-    .then(blob => {
-      downloadBlob(blob, safeName(data) + '_qr.stl');
-      showStatus('STL downloaded!', 'ok');
-    })
-    .catch(e => showStatus('STL export failed: ' + e.message, 'err'))
-    .finally(() => { $('btnStl').disabled = false; });
+async function download3MF() {
+  if (!state.group3d) return;
+  try {
+    const blob = await window.QR3D.export3MF(state.group3d);
+    downloadBlob(blob, safeName(getFormData()) + '_card.3mf');
+    showStatus('3MF downloaded', 'ok');
+  } catch (e) { showStatus('3MF export failed: ' + e.message, 'err'); }
+}
+
+function downloadSTLnew() {
+  if (!state.group3d) return;
+  try {
+    const blob = window.QR3D.exportSTL(state.group3d);
+    downloadBlob(blob, safeName(getFormData()) + '_card.stl');
+    showStatus('STL downloaded', 'ok');
+  } catch (e) { showStatus('STL export failed: ' + e.message, 'err'); }
 }
 
 /* ── History ────────────────────────────────────────────────────── */
@@ -741,6 +760,12 @@ async function buildUpiCard(qrEl, logoImg, data) {
   ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
 
+  // Device-pixel rect of the QR field (canvas is scaled by SC), for the 3D relief.
+  const qrRect = {
+    x: (qbX + qbPad) * SC, y: (qbY + qbPad) * SC,
+    w: QS * SC, h: QS * SC,
+  };
+
   // Logo overlay — 22% of QS, square with rounded corners
   if (logoImg) {
     const os=Math.round(QS*0.22);
@@ -855,7 +880,11 @@ async function buildUpiCard(qrEl, logoImg, data) {
   }
 
   ctx.restore();
-  return out.toDataURL('image/png');
+  return {
+    dataUrl: out.toDataURL('image/png'),
+    canvas: out,
+    layout: { qrRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
+  };
 }
 
 /* ── Per-mode config for service cards ──────────────────────────── */
@@ -990,6 +1019,12 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
 
+  // Device-pixel rect of the QR field (canvas is scaled by SC), for the 3D relief.
+  const qrRect = {
+    x: (qbX + qbPad) * SC, y: (qbY + qbPad) * SC,
+    w: QS * SC, h: QS * SC,
+  };
+
   // ── SERVICE LOGO in QR centre (circular clip) ─────────────────────
   const overlayImg = userLogoImg || svcLogoImg;
   if (overlayImg) {
@@ -1014,7 +1049,11 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   ctx.fillText(piT, cx, y+pillH/2);
 
   ctx.restore();
-  return out.toDataURL('image/png');
+  return {
+    dataUrl: out.toDataURL('image/png'),
+    canvas: out,
+    layout: { qrRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
+  };
 }
 
 /* ── Client-side card renderer (standalone fallback) ────────────── */
@@ -1116,6 +1155,38 @@ function switchTab(name, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   $('tab-' + name).classList.remove('hidden');
   el.classList.add('active');
+  if (name === '3d') show3DTab();
+  else if (window.QR3D) window.QR3D.disposePreview();
+}
+
+function show3DTab() {
+  const msg = $('msg3d');
+  if (!window.QR3D) { msg.textContent = '3D module still loading — try again in a moment.'; return; }
+  if (!state.lastCard || !state.qrMatrix) {
+    msg.textContent = state.qrMatrix ? 'Generate a card first.'
+      : '3D needs the server (offline mode unsupported in this version).';
+    $('btn3mf').disabled = true; $('btnStlNew').disabled = true;
+    return;
+  }
+  try {
+    if (!state.group3d) {
+      const matrix = {
+        size: state.qrMatrix.size,
+        data: Uint8Array.from(atob(state.qrMatrix.data), c => c.charCodeAt(0)),
+      };
+      state.group3d = window.QR3D.build(state.lastCard.canvas, state.lastCard.layout, matrix, {});
+    }
+    window.QR3D.mountPreview(state.group3d, $('viewer3d'));
+    $('btn3mf').disabled = false; $('btnStlNew').disabled = false;
+    msg.textContent = '';
+  } catch (e) {
+    if (e.message === 'NO_WEBGL') {
+      msg.textContent = 'No WebGL on this device — preview unavailable, but downloads still work.';
+      if (state.group3d) { $('btn3mf').disabled = false; $('btnStlNew').disabled = false; }
+    } else {
+      msg.textContent = '3D build failed: ' + e.message;
+    }
+  }
 }
 
 function showStatus(msg, type) {

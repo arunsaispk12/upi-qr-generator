@@ -669,3 +669,9 @@ html, body {
   .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
   .export-grid { grid-template-columns: 1fr; }
 }
+
+/* ── 3D viewer tab ─────────────────────────────────────────────── */
+#viewer3d { width: 100%; max-width: 480px; aspect-ratio: 1 / 1; border-radius: 12px; background: #14142a; display: block; margin: 0 auto; touch-action: none; }
+.export3d { display: flex; gap: 12px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+.hint-3d { text-align: center; }
+#msg3d { text-align: center; min-height: 1.2em; }

@@ -1,7 +1,10 @@
 # UPI QR Generator — 3D Print + Image Export
 
-A full-stack web app that generates branded UPI payment QR codes and exports them as:
+A full-stack web app that generates branded QR codes (UPI, URL, WhatsApp, Instagram,
+Google Review, WiFi) and exports them as:
 - **PNG image** — for digital sharing (WhatsApp, print, display)
+- **3D relief plaque** — a multi-color **3MF** (Bambu-native) or single-color **STL**,
+  generated entirely in the browser and previewable in an interactive 3D viewer
 - **.scad file** — parametric OpenSCAD model ready to render → STL → 3D print
 
 ---
@@ -11,9 +14,12 @@ A full-stack web app that generates branded UPI payment QR codes and exports the
 ```
 upi-qr-generator/
 ├── public/
-│   ├── index.html        ← Frontend UI
+│   ├── index.html        ← Frontend UI (incl. import map for the 3D vendor modules)
 │   ├── style.css         ← Stylesheet
-│   └── app.js            ← Frontend logic (works standalone too)
+│   ├── app.js            ← Frontend logic (works standalone too)
+│   ├── relief.js         ← Image → geometry core (k-means quantize, mask → extrude)
+│   ├── qr3d.js           ← 3D plaque assembly, WebGL preview, STL/3MF export
+│   └── vendor/           ← Vendored ESM: three.js + addons, d3-contour, 3MF exporter
 ├── src/
 │   ├── server.js         ← Express API server
 │   ├── upi.js            ← UPI string builder + validator
@@ -85,11 +91,15 @@ Returns JSON with the SCAD file content and PNG as base64.
 ```json
 {
   "success":    true,
-  "upiString":  "upi://pay?pa=...",
+  "qrString":   "upi://pay?pa=...",
+  "qrMatrix":   { "size": 33, "data": "<base64 of size*size 0/1 bytes>" },
   "scadFile":   "// OpenSCAD content...",
   "pngBase64":  "iVBORw0KGgo..."
 }
 ```
+
+`qrMatrix` carries the QR module grid so the browser can rebuild a crisp,
+scannable QR directly in the 3D relief (rather than tracing it from pixels).
 
 ### `POST /api/download/scad`
 Returns the `.scad` file as a download attachment.
@@ -99,7 +109,32 @@ Returns the `.png` file as a download attachment.
 
 ---
 
-## 3D Printing Workflow
+## 3D Relief Plaque (browser-side)
+
+After generating a card, open the **3D Model** tab to see the whole branded card as
+a multi-color relief plaque you can rotate and zoom, then download it print-ready.
+
+How it works: the rendered card canvas is quantized to ~4 colors (k-means); each
+color becomes an extruded relief layer (via `d3-contour`), and the QR region is
+rebuilt sharp from the `qrMatrix` (white field + raised black module boxes) so it
+stays scannable. Everything runs client-side with vendored `three.js`.
+
+- **Download 3MF** — multi-color, one object per color, tested against **Bambu Studio**.
+- **Download STL** — single combined mesh for any generic slicer.
+
+A `node --test` scannability gate decodes the rebuilt QR with `jsQR` to guarantee the
+geometry still resolves to the original string.
+
+**v1 limitations:**
+- No 3D in offline/standalone mode — the relief needs the server's `qrMatrix`.
+- Palette is capped at ~4 colors; multi-color badges (G Pay/PhonePe/Paytm) flatten
+  into the nearest layer (faithful silhouette, simplified color).
+- Requires WebGL for the preview; if WebGL is unavailable, the 3MF/STL downloads
+  still work (the exporters serialize geometry without rendering).
+
+---
+
+## OpenSCAD Printing Workflow (.scad path)
 
 ```
 1. Generate QR  →  Download .scad
@@ -163,9 +198,13 @@ fs.writeFileSync('output.stl', stl);
 | Package | Purpose |
 |---------|---------|
 | `express` | HTTP server |
-| `qrcode` | Server-side QR generation |
-| `canvas` | Server-side PNG rendering |
+| `qrcode` | Server-side QR generation + module matrix |
+| `canvas` | Server-side PNG rendering (optional dependency) |
 | `cors` | Cross-origin headers |
+| `three` *(vendored)* | 3D geometry, WebGL preview, STL export |
+| `d3-contour` *(vendored)* | Mask → contour rings for the relief layers |
+| `three-3mf-exporter` *(vendored)* | Multi-color 3MF export (Bambu-tested) |
+| `jsqr` *(dev)* | QR decode for the scannability test gate |
 | [scadqr](https://github.com/xypwn/scadqr) | OpenSCAD QR library (MIT) |
 
 ---

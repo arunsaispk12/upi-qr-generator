@@ -5,6 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>UPI QR Card Generator — Print Wolves</title>
 <link rel="stylesheet" href="style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vendor/three.module.js",
+    "three/addons/controls/OrbitControls.js": "/vendor/OrbitControls.js",
+    "three/addons/exporters/STLExporter.js": "/vendor/STLExporter.js",
+    "three/addons/utils/BufferGeometryUtils.js": "/vendor/BufferGeometryUtils.js",
+    "three-3mf-exporter": "/vendor/three-3mf-exporter.js",
+    "d3-contour": "/vendor/d3-contour.js"
+  }
+}
+</script>
 </head>
 <body>
 
@@ -253,6 +265,7 @@
     <div class="tabs">
       <button class="tab active" onclick="switchTab('preview',this)">Preview</button>
       <button class="tab" onclick="switchTab('howto',this)">Print Guide</button>
+      <button class="tab" onclick="switchTab('3d',this)">3D Model</button>
     </div>
 
     <div id="tab-preview" class="tab-panel">
@@ -281,6 +294,19 @@
       </div>
     </div>
 
+    <div id="tab-3d" class="tab-panel hidden">
+      <div class="preview-card">
+        <div class="preview-label">3D Relief Plaque</div>
+        <canvas id="viewer3d" width="480" height="480"></canvas>
+        <p class="hint hint-3d">Drag to rotate · scroll to zoom</p>
+        <div class="export3d">
+          <button class="btn btn-primary" id="btn3mf" disabled>Download 3MF</button>
+          <button class="btn btn-cyan" id="btnStlNew" disabled>Download STL</button>
+        </div>
+        <p id="msg3d" class="hint"></p>
+      </div>
+    </div>
+
     <div class="export-panel">
       <div class="preview-label">Export</div>
       <div class="export-grid">
@@ -295,12 +321,6 @@
           <div class="export-title">PNG Image</div>
           <div class="export-desc">Branded QR card for digital sharing.</div>
           <button class="btn btn-green btn-full" id="btnPng" onclick="downloadPNG()" disabled>Save PNG</button>
-        </div>
-        <div class="export-card" id="stlCard" style="display:none;">
-          <div class="export-icon">STL</div>
-          <div class="export-title">STL File</div>
-          <div class="export-desc">Direct STL via OpenSCAD (detected on this server).</div>
-          <button class="btn btn-primary btn-full" id="btnStl" onclick="downloadSTL()" disabled>Export STL</button>
         </div>
       </div>
     </div>
@@ -317,5 +337,6 @@
 </main>
 
 <script src="app.js"></script>
+<script type="module" src="qr3d.js"></script>
 </body>
 </html>
