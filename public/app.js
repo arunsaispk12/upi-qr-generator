@@ -574,11 +574,12 @@ async function buildUpiCard(qrEl, logoImg, data) {
   const muteCol  = bgDark ? 'rgba(255,255,255,0.55)' : pc;
   const divAlpha = bgDark ? 0.25 : 0.13;
 
-  /* 5"×11" with logo (H=1100) / 5"×7" without logo (H=700) at 100px/in × 2× retina
+  /* Unified 5"×11" for ALL QR types (H=1100) at 100px/in × 2× retina.
    * Logo: 3.5" dominant (350px tall). QS=380 (3.8") QR. W=500 locked.
-   * Output PNG: 1048×2248 (logo) / 1048×1448 (no logo).
+   * Output PNG: 1048×2248. When there's no top logo, the content block is
+   * vertically balanced (see topPad below) so the taller card isn't top-heavy.
    */
-  const W=500, H=logoImg ? 1100 : 700, M=12, SC=2;
+  const W=500, H=1100, M=12, SC=2;
   const out = document.createElement('canvas');
   out.width=(W+M*2)*SC; out.height=(H+M*2)*SC;
   const ctx=out.getContext('2d');
@@ -697,7 +698,9 @@ async function buildUpiCard(qrEl, logoImg, data) {
   ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
   ctx.save(); rr(M,M,W,H,20); ctx.clip();
 
-  let y = M+22;
+  // Vertically balance content when there's no dominant top logo, so the
+  // unified 5×11 card isn't top-heavy (footer stays bottom-anchored).
+  let y = M+22 + (logoImg ? 0 : 200);
 
   // ── LOGO — dominant 3.5" (350px) block ───────────────────────────
   if (logoImg) {
@@ -767,12 +770,15 @@ async function buildUpiCard(qrEl, logoImg, data) {
   };
 
   // Logo overlay — 22% of QS, square with rounded corners
+  let logoRect = null;
   if (logoImg) {
     const os=Math.round(QS*0.22);
     const ox=qbX+qbPad+(QS-os)/2, oy=qbY+qbPad+(QS-os)/2;
     ctx.fillStyle='#ffffff'; rr(ox-5,oy-5,os+10,os+10,7); ctx.fill();
     ctx.save(); rr(ox,oy,os,os,5); ctx.clip();
     ctx.drawImage(logoImg,ox,oy,os,os); ctx.restore();
+    // Device-pixel rect of the logo backing, for the 3D embedded-logo relief.
+    logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
   }
   y = qbY+qbSz+14;
 
@@ -883,7 +889,7 @@ async function buildUpiCard(qrEl, logoImg, data) {
   return {
     dataUrl: out.toDataURL('image/png'),
     canvas: out,
-    layout: { qrRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
+    layout: { qrRect, logoRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
   };
 }
 
@@ -935,7 +941,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   const divAlpha = bgDark ? 0.25 : 0.13;
 
   const W=500, M=12, SC=2, QS=380;
-  const H = userLogoImg ? 1100 : 640;
+  const H = 1100;   // unified 5×11 for ALL QR types
   const out = document.createElement('canvas');
   out.width=(W+M*2)*SC; out.height=(H+M*2)*SC;
   const ctx=out.getContext('2d');
@@ -958,7 +964,9 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
   ctx.save(); rr(M,M,W,H,20); ctx.clip();
 
-  let y = M+22;
+  // Vertically balance content when there's no dominant top logo (service
+  // cards have no bottom footer), so the unified 5×11 card isn't top-heavy.
+  let y = M+22 + (userLogoImg ? 0 : 250);
 
   // ── USER LOGO (if uploaded) — dominant block, same as UPI card ────
   if (userLogoImg) {
@@ -1027,6 +1035,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
 
   // ── SERVICE LOGO in QR centre (circular clip) ─────────────────────
   const overlayImg = userLogoImg || svcLogoImg;
+  let logoRect = null;
   if (overlayImg) {
     const os = Math.round(QS * 0.22);
     const ox = qbX+qbPad+(QS-os)/2, oy = qbY+qbPad+(QS-os)/2;
@@ -1035,6 +1044,8 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
     ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip();
     ctx.drawImage(overlayImg, ox, oy, os, os);
     ctx.restore();
+    // Device-pixel rect of the logo backing, for the 3D embedded-logo relief.
+    logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
   }
   y = qbY+qbSz+14;
 
@@ -1052,7 +1063,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   return {
     dataUrl: out.toDataURL('image/png'),
     canvas: out,
-    layout: { qrRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
+    layout: { qrRect, logoRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
   };
 }
 

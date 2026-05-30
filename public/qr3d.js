@@ -13,23 +13,35 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
  * InstancedMesh: three's STL/3MF exporters do NOT expand per-instance matrices,
  * so an InstancedMesh would serialize as a single cube. A merged geometry
  * carries every module box into the exported (printable) file.
+ *
+ * `quietModules` adds a quiet-zone border (default 1) so the module pitch and
+ * inset match the card image (the PNG draws the QR with a 1-module margin), i.e.
+ * the 3D QR is geometrically identical to the card's QR. `logoRect` (working
+ * units, optional) marks a centre region whose modules are SKIPPED so the
+ * embedded logo can occupy it — exactly like the card's white logo backing.
  * @returns {{ group: THREE.Group, boxCount: number }}
  */
-export function buildSharpQr(matrix, qrRect, { cellHeightMM, baseZ }) {
+export function buildSharpQr(matrix, qrRect, { cellHeightMM, baseZ, quietModules = 1, logoRect = null }) {
   const group = new THREE.Group();
-  const cellMM = qrRect.w / matrix.size;
+  const size = matrix.size;
+  const cellMM = qrRect.w / (size + 2 * quietModules);
   const field = new THREE.Mesh(
     new THREE.BoxGeometry(qrRect.w, qrRect.h, baseZ),
     new THREE.MeshStandardMaterial({ color: 0xffffff }));
   field.position.set(qrRect.x + qrRect.w/2, -(qrRect.y + qrRect.h/2), baseZ/2);
   group.add(field);
 
+  const inLogo = (px, py) => logoRect &&
+    px >= logoRect.x && px <= logoRect.x + logoRect.w &&
+    py >= logoRect.y && py <= logoRect.y + logoRect.h;
+
   const boxes = [];
-  for (let row = 0; row < matrix.size; row++) {
-    for (let col = 0; col < matrix.size; col++) {
-      if (matrix.data[row * matrix.size + col] !== 1) continue;
-      const px = qrRect.x + (col + 0.5) * cellMM;
-      const py = qrRect.y + (row + 0.5) * cellMM;
+  for (let row = 0; row < size; row++) {
+    for (let col = 0; col < size; col++) {
+      if (matrix.data[row * size + col] !== 1) continue;
+      const px = qrRect.x + (quietModules + col + 0.5) * cellMM;
+      const py = qrRect.y + (quietModules + row + 0.5) * cellMM;
+      if (inLogo(px, py)) continue; // leave the centre clear for the embedded logo
       const box = new THREE.BoxGeometry(cellMM, cellMM, cellHeightMM);
       box.translate(px, -py, baseZ + cellHeightMM/2);
       boxes.push(box);
@@ -73,7 +85,10 @@ export function rasterizeQrMatrix(matrix, px) {
  */
 export function build(canvas, layout, matrix, opts = {}) {
   const k = opts.colors || 4;
-  const longEdgeMM = opts.longEdgeMM || 100;
+  // Default to the card's real-world print size. The card is rendered at
+  // 100px/inch × 2 (retina), so canvasPx / 200 = inches → mm. A 5×11 card →
+  // ~285mm long edge. Callers can override via opts.longEdgeMM.
+  const longEdgeMM = opts.longEdgeMM || (Math.max(canvas.width, canvas.height) / 200) * 25.4;
   const baseT = opts.baseThickness || 2;
   const layerH = opts.layerHeight || 0.8;
 
@@ -96,14 +111,18 @@ export function build(canvas, layout, matrix, opts = {}) {
   const pxToMM = longEdgeMM / Math.max(w, h);
   const group = new THREE.Group();
 
+  // Quantize first so the base plate can take the DOMINANT CLUSTER colour
+  // (e.g. the card's black), not the muddy pixel average that the gold accents
+  // and the blanked-white QR region would skew.
+  const { palette, labels } = quantize(img, k);
+  const baseIdx = dominantLabel(labels, k);
+
   const plate = new THREE.Mesh(
     new THREE.BoxGeometry(w*pxToMM, h*pxToMM, baseT),
-    new THREE.MeshStandardMaterial({ color: rgbHex(dominant(img)) }));
+    new THREE.MeshStandardMaterial({ color: rgbHex(palette[baseIdx]) }));
   plate.position.set(w*pxToMM/2, -h*pxToMM/2, baseT/2);
   group.add(plate);
 
-  const { palette, labels } = quantize(img, k);
-  const baseIdx = dominantLabel(labels, k);
   for (let c = 0; c < k; c++) {
     if (c === baseIdx) continue;
     try {
@@ -121,18 +140,57 @@ export function build(canvas, layout, matrix, opts = {}) {
   // inside the base plate (overlapping volumes / coplanar faces) — wrong for a
   // one-object-per-colour 3MF and causes z-fighting in preview.
   const qrRectMM = { x: r.x*scale*pxToMM, y: r.y*scale*pxToMM, w: r.w*scale*pxToMM, h: r.h*scale*pxToMM };
-  const { group: qrGroup } = buildSharpQr(matrix, qrRectMM, { cellHeightMM: layerH, baseZ: layerH });
+  // Embedded centre logo: carve its modules out of the QR and rebuild it as a
+  // colour relief from the (un-blanked) source canvas — matching the card's
+  // logo-in-QR-centre treatment (e.g. the bhuvis_qr.png emblem).
+  const lr = layout.logoRect;
+  const logoRectMM = lr && { x: lr.x*scale*pxToMM, y: lr.y*scale*pxToMM, w: lr.w*scale*pxToMM, h: lr.h*scale*pxToMM };
+  const { group: qrGroup } = buildSharpQr(matrix, qrRectMM,
+    { cellHeightMM: layerH, baseZ: layerH, logoRect: logoRectMM });
+  if (lr) {
+    try { buildCenterLogo(canvas, lr, logoRectMM, layerH).children.forEach(m => qrGroup.add(m)); }
+    catch (e) { console.warn('centre logo skipped', e.message); }
+  }
   qrGroup.position.z = baseT;
   group.add(qrGroup);
   return group;
 }
 
-function rgbHex([r,g,b]) { return (r<<16)|(g<<8)|b; }
-function dominant(img) {
-  let r=0,g=0,b=0,n=img.width*img.height;
-  for (let i=0;i<n;i++){r+=img.data[i*4];g+=img.data[i*4+1];b+=img.data[i*4+2];}
-  return [Math.round(r/n),Math.round(g/n),Math.round(b/n)];
+/**
+ * Build the embedded centre logo as a colour relief, cropped from the (full-res,
+ * un-blanked) source card canvas. The lightest colour cluster is treated as the
+ * white logo backing (the QR field already provides white there) and skipped;
+ * the remaining clusters extrude as the raised logo. Returns a THREE.Group whose
+ * meshes sit at z=heightMM (on top of the QR field), in qrRectMM coordinates.
+ */
+function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM) {
+  const work = 110;
+  const cc = document.createElement('canvas'); cc.width = work; cc.height = work;
+  const cx = cc.getContext('2d');
+  cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, work, work); // flatten transparency to white
+  cx.drawImage(srcCanvas, logoRectDev.x, logoRectDev.y, logoRectDev.w, logoRectDev.h, 0, 0, work, work);
+  const img = cx.getImageData(0, 0, work, work);
+  const { palette, labels } = quantize(img, 3);
+  const luma = ([r, g, b]) => 0.299*r + 0.587*g + 0.114*b;
+  let bg = 0, best = -1;
+  palette.forEach((p, i) => { const l = luma(p); if (l > best) { best = l; bg = i; } });
+  const grp = new THREE.Group();
+  const pxToMM_logo = logoRectMM.w / work;
+  for (let c = 0; c < palette.length; c++) {
+    if (c === bg) continue;
+    try {
+      const mask = maskForColor(labels, c, { width: work, height: work });
+      if (mask.reduce((s, v) => s + v, 0) === 0) continue;
+      const geo = maskToGeometry(mask, { width: work, height: work, heightMM, pxToMM: pxToMM_logo });
+      const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: rgbHex(palette[c]) }));
+      mesh.position.set(logoRectMM.x, -logoRectMM.y, heightMM);
+      grp.add(mesh);
+    } catch (e) { /* skip empty/failed cluster */ }
+  }
+  return grp;
 }
+
+function rgbHex([r,g,b]) { return (r<<16)|(g<<8)|b; }
 function dominantLabel(labels, k) {
   const c = new Array(k).fill(0); for (const l of labels) c[l]++;
   return c.indexOf(Math.max(...c));
@@ -172,13 +230,22 @@ export function mountPreview(group, canvasEl) {
   const size = box.getSize(new THREE.Vector3());
   group.position.sub(center); // center at origin
   scene.add(group);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(1, 1, 2); scene.add(dir);
+  // Bright, multi-directional lighting so a near-black card still reads, and the
+  // raised relief catches highlights/shadows. Hemisphere fill + key/back/side lights.
+  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x404050, 0.8));
+  const key = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(1, 1.5, 2); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.6); fill.position.set(-1.5, -0.5, 1); scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xffffff, 0.5); rim.position.set(0, 0.5, -2); scene.add(rim);
 
   const w = canvasEl.clientWidth || 480, h = canvasEl.clientHeight || 480;
   const cam = new THREE.PerspectiveCamera(45, w / h, 0.1, 5000);
-  cam.position.set(0, 0, Math.max(size.x, size.y, size.z) * 2.2 || 100);
+  // Angled 3/4 view (not straight-on) so the raised relief depth is visible.
+  const dist = (Math.max(size.x, size.y, size.z) || 100) * 1.9;
+  cam.position.set(dist * 0.45, -dist * 0.30, dist * 0.95);
+  cam.lookAt(0, 0, 0);
   _renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true });
+  _renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); // crisp on HiDPI
   _renderer.setSize(w, h, false);
   _controls = new OrbitControls(cam, canvasEl);
   (function loop() { _raf = requestAnimationFrame(loop); _controls.update(); _renderer.render(scene, cam); })();
