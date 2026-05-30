@@ -767,12 +767,15 @@ async function buildUpiCard(qrEl, logoImg, data) {
   };
 
   // Logo overlay — 22% of QS, square with rounded corners
+  let logoRect = null;
   if (logoImg) {
     const os=Math.round(QS*0.22);
     const ox=qbX+qbPad+(QS-os)/2, oy=qbY+qbPad+(QS-os)/2;
     ctx.fillStyle='#ffffff'; rr(ox-5,oy-5,os+10,os+10,7); ctx.fill();
     ctx.save(); rr(ox,oy,os,os,5); ctx.clip();
     ctx.drawImage(logoImg,ox,oy,os,os); ctx.restore();
+    // Device-pixel rect of the logo backing, for the 3D embedded-logo relief.
+    logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
   }
   y = qbY+qbSz+14;
 
@@ -883,7 +886,7 @@ async function buildUpiCard(qrEl, logoImg, data) {
   return {
     dataUrl: out.toDataURL('image/png'),
     canvas: out,
-    layout: { qrRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
+    layout: { qrRect, logoRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
   };
 }
 
@@ -1027,6 +1030,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
 
   // ── SERVICE LOGO in QR centre (circular clip) ─────────────────────
   const overlayImg = userLogoImg || svcLogoImg;
+  let logoRect = null;
   if (overlayImg) {
     const os = Math.round(QS * 0.22);
     const ox = qbX+qbPad+(QS-os)/2, oy = qbY+qbPad+(QS-os)/2;
@@ -1035,6 +1039,8 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
     ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip();
     ctx.drawImage(overlayImg, ox, oy, os, os);
     ctx.restore();
+    // Device-pixel rect of the logo backing, for the 3D embedded-logo relief.
+    logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
   }
   y = qbY+qbSz+14;
 
@@ -1052,7 +1058,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   return {
     dataUrl: out.toDataURL('image/png'),
     canvas: out,
-    layout: { qrRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
+    layout: { qrRect, logoRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
   };
 }
 
