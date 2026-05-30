@@ -229,6 +229,7 @@ function getFormData() {
 /* ── Generate ───────────────────────────────────────────────────── */
 async function generate() {
   state.lastCard = null;
+  state.qrMatrix = null;
   const data    = getFormData();
   const typeDef = QR_TYPES[data.mode];
   const err     = typeDef ? typeDef.validate(data) : null;
@@ -1043,7 +1044,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   return {
     dataUrl: out.toDataURL('image/png'),
     canvas: out,
-    layout: { qrRect, paletteHints: [pc, '#ffffff', '#000000'] },
+    layout: { qrRect, paletteHints: [pc, bgColor, '#ffffff', '#000000'] },
   };
 }
 
