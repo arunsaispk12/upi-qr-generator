@@ -16,3 +16,7 @@ test('getQrMatrix dark-module bytes are 0/1 and there is at least one dark', () 
   for (const b of bytes) { assert.ok(b === 0 || b === 1); if (b === 1) dark++; }
   assert.ok(dark > 0, 'matrix has dark modules');
 });
+
+test('getQrMatrix throws on empty input', () => {
+  assert.throws(() => getQrMatrix(''), /required|input text/i);
+});
