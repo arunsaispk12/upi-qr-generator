@@ -470,7 +470,10 @@ function downloadPNG() {
 function _xmlEsc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-/* Convert a recorded canvas text draw → a crisp SVG <text> element (coords ×SC). */
+/* Convert a recorded canvas text draw → a crisp SVG <text> element (coords ×SC).
+ * Baseline is BAKED INTO the y coordinate (default alphabetic) instead of using
+ * dominant-baseline, which Inkscape/librsvg render inconsistently. Approximate
+ * font metrics: ascent ≈ 0.80em, mid ≈ 0.35em above the alphabetic baseline. */
 function _textToSvg(t, SC) {
   const mSize = /([\d.]+)px/.exec(t.font);
   const sizePx = (mSize ? parseFloat(mSize[1]) : 12) * SC;
@@ -478,12 +481,16 @@ function _textToSvg(t, SC) {
   const mW = /^\s*(\d{3}|bold|bolder|lighter)/.exec(t.font); if (mW) weight = mW[1];
   const family = /px\s+(.+)$/.exec(t.font); const fam = family ? family[1] : 'sans-serif';
   const anchor = t.align === 'center' ? 'middle' : (t.align === 'right' || t.align === 'end') ? 'end' : 'start';
-  const baseline = t.baseline === 'middle' ? 'central'
-                 : t.baseline === 'top' ? 'text-before-edge' : 'alphabetic';
+  // Shift y from the canvas baseline mode to an alphabetic baseline.
+  let dy = 0;
+  if (t.baseline === 'middle')      dy = sizePx * 0.35;
+  else if (t.baseline === 'top')    dy = sizePx * 0.80;
+  else if (t.baseline === 'bottom') dy = -sizePx * 0.20;
+  const yPos = t.y * SC + dy;
   const op = (t.alpha != null && t.alpha < 1) ? ` opacity="${(+t.alpha).toFixed(2)}"` : '';
-  return `<text x="${(t.x*SC).toFixed(1)}" y="${(t.y*SC).toFixed(1)}" `
+  return `<text x="${(t.x*SC).toFixed(1)}" y="${yPos.toFixed(1)}" `
        + `font-family="${_xmlEsc(fam)}" font-size="${sizePx.toFixed(1)}" font-weight="${weight}" `
-       + `fill="${t.fill}" text-anchor="${anchor}" dominant-baseline="${baseline}"${op}>`
+       + `fill="${t.fill}" text-anchor="${anchor}"${op}>`
        + `${_xmlEsc(t.str)}</text>`;
 }
 
