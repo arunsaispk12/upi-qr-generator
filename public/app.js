@@ -1202,16 +1202,27 @@ async function show3DTab() {
   }
 }
 
-/* Load the uploaded SVG logo into an Image for crisp rasterisation in the 3D
- * relief. Cached on state; resolves null if there is no SVG. */
+/* Pick the crisp SVG source for the 3D centre logo:
+ *   1. a user-uploaded 3D SVG (state.svgLogoUrl), else
+ *   2. the current service type's vector logo (/logos/<name>.svg), else null.
+ * (Brand emblems uploaded as PNG have no vector → 3D falls back to the card crop.) */
+function svgLogoSrc() {
+  if (state.svgLogoUrl) return state.svgLogoUrl;
+  const td = QR_TYPES[state.mode];
+  if (state.mode !== 'upi' && td && td.logoName) return `/logos/${td.logoName}.svg`;
+  return null;
+}
+/* Load that SVG into an Image for crisp rasterisation in the 3D relief.
+ * Cached by source; resolves null if there is none / it fails. */
 function loadSvgLogoImg() {
-  if (!state.svgLogoUrl) return Promise.resolve(null);
-  if (state._svgLogoImg && state._svgLogoImg.__src === state.svgLogoUrl) return Promise.resolve(state._svgLogoImg);
+  const src = svgLogoSrc();
+  if (!src) return Promise.resolve(null);
+  if (state._svgLogoImg && state._svgLogoImg.__src === src) return Promise.resolve(state._svgLogoImg);
   return new Promise(resolve => {
     const img = new Image();
-    img.onload  = () => { img.__src = state.svgLogoUrl; state._svgLogoImg = img; resolve(img); };
+    img.onload  = () => { img.__src = src; state._svgLogoImg = img; resolve(img); };
     img.onerror = () => resolve(null);
-    img.src = state.svgLogoUrl;
+    img.src = src;
   });
 }
 

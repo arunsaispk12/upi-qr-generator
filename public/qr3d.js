@@ -211,7 +211,8 @@ function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, logoShape
     cx.restore();
   }
   const img = cx.getImageData(0, 0, work, work);
-  const k = 4; // more clusters → more faithful logo colours
+  // k=3 keeps the logo's real colours while limiting anti-alias "muddy" shades.
+  const k = 3;
   const { palette, labels } = quantize(img, k);
   // Backing = the dominant (most-common) cluster, whether light or dark.
   const counts = new Array(palette.length).fill(0);
