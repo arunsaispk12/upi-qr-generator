@@ -186,6 +186,13 @@
       <span class="muted-note">On: your uploaded logo sits in the QR centre (error-correction H keeps it scannable). With no logo uploaded, the centre is reserved blank. Off: a full QR with no centre logo.</span>
     </div>
     <div class="field">
+      <label class="embed-logo-row">
+        <input type="checkbox" id="vCenter" onchange="if(state.pngBase64)generate()" />
+        <span>Vertically centre header (when no top logo)</span>
+      </label>
+      <span class="muted-note">Off: header sits just above the QR. On: header is centred in the space above the QR.</span>
+    </div>
+    <div class="field">
       <label>Logo shape</label>
       <select id="embedShape" onchange="if(state.pngBase64)generate()">
         <option value="circle" selected>Circle</option>

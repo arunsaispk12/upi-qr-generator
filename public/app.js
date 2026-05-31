@@ -222,6 +222,7 @@ function getFormData() {
     logoType:     state.logoType,
     embedLogo:    $('embedLogo') ? $('embedLogo').checked : true,
     embedShape:   val('embedShape') || 'circle',
+    vCenter:      $('vCenter') ? $('vCenter').checked : false,
     embedScale:   (+val('r3dEmbed') || 22) / 100,
     baseLength:     +val('baseLength')     || 90,
     baseWidth:      +val('baseWidth')      || 90,
@@ -753,41 +754,66 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
   ctx.save(); rr(M,M,W,H,20); ctx.clip();
 
-  // Vertically balance content when there's no dominant top logo, so the
-  // unified 5×11 card isn't top-heavy (footer stays bottom-anchored).
-  let y = M+22 + (logoImg ? 0 : 200);
+  /* ── LOCKED SECTION BANDS ─────────────────────────────────────────
+   * The QR box and everything below it sit at FIXED positions so the layout
+   * never shifts with brand-name length or logo presence. The header
+   * (emblem + brand + tagline + action) lays out in the fixed band ABOVE the QR.
+   *   HEADER band : M+22 .. qbY-6
+   *   QR box      : fixed at qbY (locked size & position)
+   *   PILL        : fixed, qbY+qbSz+14
+   *   BADGES      : fixed, below the pill (UPI only)
+   *   FOOTER      : fixed, bottom 56px
+   */
+  const QS=380, qbPad=10, qbSz=QS+qbPad*2;     // QR box — LOCKED size
+  const qbX=M+(W-qbSz)/2, qbY=M+466;            // QR box — LOCKED position
+  const HEADER_TOP=M+22, HEADER_BOT=qbY-6;
 
-  // ── LOGO — dominant 3.5" (350px) block ───────────────────────────
+  // Pre-measure brand name (1 or 2 lines) to size the header band.
+  function computeBrand() {
+    const BN=brandName.toUpperCase(), maxW=W-32;
+    let fs=32; ctx.font=`900 ${fs}px sans-serif`;
+    while(ctx.measureText(BN).width>maxW && fs>20){ fs--; ctx.font=`900 ${fs}px sans-serif`; }
+    if (ctx.measureText(BN).width<=maxW) return { fs, lines:[BN] };
+    const words=BN.split(/\s+/);
+    let best=Math.max(1,Math.round(words.length/2)), bestDiff=Infinity;
+    for (let i=1;i<words.length;i++){ const d=Math.abs(words.slice(0,i).join(' ').length-words.slice(i).join(' ').length); if(d<bestDiff){bestDiff=d;best=i;} }
+    let l1=words.slice(0,best).join(' '), l2=words.slice(best).join(' ');
+    while((ctx.measureText(l1).width>maxW||ctx.measureText(l2).width>maxW)&&fs>14){ fs--; ctx.font=`900 ${fs}px sans-serif`; }
+    return { fs, lines:[l1,l2] };
+  }
+  const brand=computeBrand();
+
+  // Emblem dimensions (scaled), if a top logo is present.
+  let emblemDims=null;
   if (logoImg) {
-    const maxH=350, maxW=W*0.82;   // 350px = 3.5" at 100px/in
+    const maxH=300, maxW=W*0.82;
     const sc=Math.min(maxH/logoImg.naturalHeight, maxW/logoImg.naturalWidth);
-    const lw=Math.round(logoImg.naturalWidth*sc), lh=Math.round(logoImg.naturalHeight*sc);
-    ctx.drawImage(logoImg, cx-lw/2, y, lw, lh);
-    y += lh+18;
+    emblemDims={ w:Math.round(logoImg.naturalWidth*sc), h:Math.round(logoImg.naturalHeight*sc) };
+  }
+  // Header block advances (must match the draw steps below).
+  const emblemAdv = emblemDims ? emblemDims.h+18 : 0;
+  const brandAdv  = brand.lines.length===1 ? brand.fs+8 : brand.lines.length*(brand.fs+4)+4;
+  const headerAdv = emblemAdv + brandAdv + 20/*tagline*/ + 34/*action*/ + 16/*via*/;
+  const bandH = HEADER_BOT - HEADER_TOP;
+  // Placement within the band: vertical-centre (toggle) or bottom-anchor to QR.
+  let y = data.vCenter
+    ? HEADER_TOP + Math.max(0, (bandH - headerAdv)/2)
+    : Math.max(HEADER_TOP, HEADER_BOT - headerAdv);
+
+  // ── EMBLEM (top logo) ─────────────────────────────────────────────
+  if (emblemDims) {
+    ctx.drawImage(logoImg, cx-emblemDims.w/2, y, emblemDims.w, emblemDims.h);
+    y += emblemDims.h+18;
   }
 
-  // ── BRAND NAME — one line if it fits at a readable size, else two lines ──
+  // ── BRAND NAME (1 or 2 lines, pre-measured) ───────────────────────
   ctx.fillStyle=textCol; ctx.textAlign='center'; ctx.textBaseline='top';
-  {
-    const BN = brandName.toUpperCase(), maxW = W-32;
-    let fs = 32; ctx.font=`900 ${fs}px sans-serif`;
-    while(ctx.measureText(BN).width>maxW && fs>20){ fs--; ctx.font=`900 ${fs}px sans-serif`; }
-    if (ctx.measureText(BN).width <= maxW) {
-      ctx.fillText(BN, cx, y); y += fs+8;
-    } else {
-      // wrap into two lines at the space nearest the middle
-      const words = BN.split(/\s+/);
-      let best = Math.max(1, Math.round(words.length/2)), bestDiff = Infinity;
-      for (let i=1; i<words.length; i++) {
-        const d = Math.abs(words.slice(0,i).join(' ').length - words.slice(i).join(' ').length);
-        if (d < bestDiff) { bestDiff = d; best = i; }
-      }
-      const line1 = words.slice(0,best).join(' '), line2 = words.slice(best).join(' ') || '';
-      while((ctx.measureText(line1).width>maxW || ctx.measureText(line2).width>maxW) && fs>14){ fs--; ctx.font=`900 ${fs}px sans-serif`; }
-      ctx.fillText(line1, cx, y); y += fs+4;
-      if (line2) { ctx.fillText(line2, cx, y); y += fs+4; }
-      y += 4;
-    }
+  ctx.font=`900 ${brand.fs}px sans-serif`;
+  if (brand.lines.length===1) {
+    ctx.fillText(brand.lines[0], cx, y); y += brand.fs+8;
+  } else {
+    brand.lines.forEach(ln => { ctx.fillText(ln, cx, y); y += brand.fs+4; });
+    y += 4;
   }
 
   // ── TAGLINE with flanking lines, or thin divider ──────────────────
@@ -809,7 +835,7 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   }
   y += 20;
 
-  // ── SCAN & PAY with flanking lines ───────────────────────────────
+  // ── ACTION (SCAN …) with flanking lines ───────────────────────────
   y += 12;
   ctx.font='bold 16px sans-serif'; ctx.fillStyle=textCol; ctx.textBaseline='top';
   const spTxt=cfg.action, spW=ctx.measureText(spTxt).width;
@@ -820,14 +846,11 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   ctx.fillText(spTxt, cx, y);
   y += 22;
 
-  // ── VIA UPI ───────────────────────────────────────────────────────
+  // ── VIA … ─────────────────────────────────────────────────────────
   ctx.font='12px sans-serif'; ctx.fillStyle=muteCol; ctx.globalAlpha=1;
   ctx.fillText(cfg.via, cx, y);
-  y += 16;
 
-  // ── QR BOX — fixed 380 for ALL cards: locked, consistent QR dimension ──
-  const QS=380, qbPad=10, qbSz=QS+qbPad*2;
-  const qbX=M+(W-qbSz)/2, qbY=y+8;
+  // ── QR BOX — drawn at the LOCKED qbY (header above adapts to it) ───
   // Clean white rounded field (quiet zone) — no coloured frame, matches reference.
   ctx.fillStyle='#ffffff'; rr(qbX,qbY,qbSz,qbSz,14); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
