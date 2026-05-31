@@ -1234,9 +1234,8 @@ async function relief3dOpts() {
     layerHeight:   num('r3dRelief', 0.8),
     colors:        Math.round(num('r3dColors', 4)),
     logoSvgImg:    await loadSvgLogoImg(),   // crisp 3D centre logo (or null → card crop)
+    longEdgeMM:    num('r3dSize', 280),      // plaque long edge in mm (default ≈ real card size)
   };
-  const size = num('r3dSize', 0);
-  if (size > 0) o.longEdgeMM = size;   // 0 = auto (real card size)
   return o;
 }
 
@@ -1265,8 +1264,7 @@ function onRelief3dInput() {
   set('r3dThicknessV', (+$('r3dThickness').value).toFixed(1));
   set('r3dReliefV',    (+$('r3dRelief').value).toFixed(1));
   set('r3dColorsV',    $('r3dColors').value);
-  const sz = +$('r3dSize').value;
-  set('r3dSizeV', sz > 0 ? sz + ' mm' : 'auto');
+  set('r3dSizeV', $('r3dSize').value + ' mm');
   // invalidate cache + debounce a live rebuild
   state.group3d = null;
   clearTimeout(_r3dTimer);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { exportTo3MF } from 'three-3mf-exporter';
 import { quantize, quantizeToPalette, maskForColor, maskToGeometry } from './relief.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -57,9 +57,15 @@ export function buildSharpQr(matrix, qrRect, { cellHeightMM, baseZ, quietModules
   }
   const n = boxes.length;
   if (n > 0) {
-    const merged = mergeGeometries(boxes, false);
+    let merged = mergeGeometries(boxes, false);
     boxes.forEach(b => b.dispose());
-    group.add(new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ color: moduleColor })));
+    // Weld coincident vertices from adjacent module boxes → fewer non-manifold edges.
+    try { merged = mergeVertices(merged); } catch (e) { /* keep unwelded on failure */ }
+    const mesh = new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ color: moduleColor }));
+    // Sink the modules slightly into the white field so their bottom faces aren't
+    // coincident with the field's top face (coincident faces = non-manifold).
+    mesh.position.z = -0.02;
+    group.add(mesh);
   }
   return { group, boxCount: n };
 }
@@ -149,7 +155,9 @@ export function build(canvas, layout, matrix, opts = {}) {
       if (mask.reduce((s,v)=>s+v,0) === 0) continue;
       const geo = maskToGeometry(mask, { width: w, height: h, heightMM: layerH, pxToMM });
       const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: rgbHex(palette[c]) }));
-      mesh.position.z = baseT;
+      // Overlap into the base plate (not coincident at z=baseT) to avoid the
+      // coincident-face non-manifold edges Bambu flags.
+      mesh.position.z = baseT - 0.02;
       group.add(mesh);
     } catch (e) { console.warn('relief layer skipped', c, e.message); }
   }
