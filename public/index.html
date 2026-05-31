@@ -171,6 +171,13 @@
       </label>
       <span class="muted-note">On: your uploaded logo sits in the QR centre (error-correction H keeps it scannable). With no logo uploaded, the centre is reserved blank. Off: a full QR with no centre logo.</span>
     </div>
+    <div class="field">
+      <label>Logo shape</label>
+      <select id="embedShape" onchange="if(state.pngBase64)generate()">
+        <option value="circle" selected>Circle</option>
+        <option value="square">Square</option>
+      </select>
+    </div>
 
     <div class="row2">
       <div class="field">

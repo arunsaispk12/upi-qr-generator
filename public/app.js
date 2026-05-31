@@ -201,6 +201,8 @@ function getFormData() {
     logoDataUrl:  state.logoDataUrl,
     logoType:     state.logoType,
     embedLogo:    $('embedLogo') ? $('embedLogo').checked : true,
+    embedShape:   val('embedShape') || 'circle',
+    embedScale:   (+val('r3dEmbed') || 22) / 100,
     baseLength:     +val('baseLength')     || 90,
     baseWidth:      +val('baseWidth')      || 90,
     baseThickness:  +val('baseThickness')  || 2,
@@ -792,19 +794,26 @@ async function buildUpiCard(qrEl, logoImg, data) {
     w: QS * SC, h: QS * SC,
   };
 
-  // Embedded centre logo (toggle). When enabled, reserve a white backing in the
-  // QR centre and draw the logo if one is uploaded; if not, leave it blank.
+  // Embedded centre logo (toggle + shape). Reserve a backing in the QR centre
+  // and draw the logo if uploaded; if not, leave it blank. Shape = circle|square.
   let logoRect = null;
+  const logoShape = (data.embedShape === 'square') ? 'rect' : 'circle';
   if (data.embedLogo !== false) {
-    const os=Math.round(QS*0.22);
+    const os=Math.round(QS*(data.embedScale||0.22));
     const ox=qbX+qbPad+(QS-os)/2, oy=qbY+qbPad+(QS-os)/2;
-    ctx.fillStyle='#ffffff'; rr(ox-5,oy-5,os+10,os+10,7); ctx.fill();
+    const backing = () => { // backing/outline path (shape-aware)
+      if (logoShape === 'circle') { ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, (os+10)/2, 0, Math.PI*2); }
+      else rr(ox-5, oy-5, os+10, os+10, 7);
+    };
+    ctx.fillStyle='#ffffff'; backing(); ctx.fill();
     if (logoImg) {
-      ctx.save(); rr(ox,oy,os,os,5); ctx.clip();
-      ctx.drawImage(logoImg,ox,oy,os,os); ctx.restore();
+      ctx.save();
+      if (logoShape === 'circle') { ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip(); }
+      else { rr(ox, oy, os, os, 5); ctx.clip(); }
+      ctx.drawImage(logoImg, ox, oy, os, os); ctx.restore();
     }
     // Outline around the embed area (delineates the logo zone, esp. when empty).
-    ctx.strokeStyle=pc; ctx.lineWidth=2.5; rr(ox-5,oy-5,os+10,os+10,7); ctx.stroke();
+    ctx.strokeStyle=pc; ctx.lineWidth=2.5; backing(); ctx.stroke();
     // Device-pixel rect of the reserved logo area, for the 3D embedded-logo relief.
     logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
   }
@@ -918,7 +927,7 @@ async function buildUpiCard(qrEl, logoImg, data) {
   return {
     dataUrl: out.toDataURL('image/png'),
     canvas: out,
-    layout: { qrRect, logoRect, logoShape: 'rect', qrColor: qrCol,
+    layout: { qrRect, logoRect, logoShape, qrColor: qrCol,
               paletteHints: [pc, bgColor, '#ffffff', qrCol] },
   };
 }
@@ -1064,23 +1073,26 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
     w: QS * SC, h: QS * SC,
   };
 
-  // ── Embedded centre logo (toggle) — circular backing for service cards ──
+  // ── Embedded centre logo (toggle + shape: circle|square) ──
   const overlayImg = userLogoImg || svcLogoImg;
   let logoRect = null;
+  const logoShape = (data.embedShape === 'square') ? 'rect' : 'circle';
   if (data.embedLogo !== false) {
-    const os = Math.round(QS * 0.22);
+    const os = Math.round(QS * (data.embedScale||0.22));
     const ox = qbX+qbPad+(QS-os)/2, oy = qbY+qbPad+(QS-os)/2;
-    ctx.fillStyle='#ffffff'; rr(ox-5,oy-5,os+10,os+10,os/2+5); ctx.fill();
+    const backing = () => {
+      if (logoShape === 'circle') { ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, (os+10)/2, 0, Math.PI*2); }
+      else rr(ox-5, oy-5, os+10, os+10, 7);
+    };
+    ctx.fillStyle='#ffffff'; backing(); ctx.fill();
     if (overlayImg) {
       ctx.save();
-      ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip();
+      if (logoShape === 'circle') { ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip(); }
+      else { rr(ox, oy, os, os, 5); ctx.clip(); }
       ctx.drawImage(overlayImg, ox, oy, os, os);
       ctx.restore();
     }
-    // Circular outline around the embed area.
-    ctx.strokeStyle=pc; ctx.lineWidth=2.5;
-    ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, (os+10)/2, 0, Math.PI*2); ctx.stroke();
-    // Device-pixel rect of the reserved logo area, for the 3D embedded-logo relief.
+    ctx.strokeStyle=pc; ctx.lineWidth=2.5; backing(); ctx.stroke();
     logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
   }
   y = qbY+qbSz+14;
@@ -1100,7 +1112,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   return {
     dataUrl: out.toDataURL('image/png'),
     canvas: out,
-    layout: { qrRect, logoRect, logoShape: 'circle', qrColor: qrCol,
+    layout: { qrRect, logoRect, logoShape, qrColor: qrCol,
               paletteHints: [pc, bgColor, '#ffffff', qrCol] },
   };
 }
