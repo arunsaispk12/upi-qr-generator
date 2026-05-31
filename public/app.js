@@ -83,19 +83,22 @@ let state = {
 
 /* ── Payment badge image loader (cached) ────────────────────────── */
 const _badgeCache = {};
-const BADGE_EXT = { gpay: 'png', phonepe: 'webp', paytm: 'png' };
+// Logos present as raster images in /logos. Only these are fetched; anything
+// else resolves null (→ canvas-drawn fallback for payment badges, empty centre
+// for service cards) so there are no 404s for logos that aren't supplied yet.
+const BADGE_EXT = { gpay: 'png', phonepe: 'png', paytm: 'png' };
 function loadBadge(name) {
+  if (!(name in BADGE_EXT)) return Promise.resolve(null);
   if (_badgeCache[name]) return Promise.resolve(_badgeCache[name]);
   return new Promise(resolve => {
     const img = new Image();
     img.onload  = () => { _badgeCache[name] = img; resolve(img); };
     img.onerror = () => resolve(null);   // null → fall back to canvas drawing
-    const ext = BADGE_EXT[name] || 'svg';
-    img.src = `/logos/${name}.${ext}?v=3`;
+    img.src = `/logos/${name}.${BADGE_EXT[name]}?v=4`;
   });
 }
 // Kick off preload so they're ready by the time user clicks Generate
-['gpay','phonepe','paytm','whatsapp','instagram','google','url','wifi'].forEach(loadBadge);
+['gpay','phonepe','paytm'].forEach(loadBadge);
 
 /* ── DOM helpers ────────────────────────────────────────────────── */
 const $   = id => document.getElementById(id);
@@ -764,8 +767,8 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
    *   BADGES      : fixed, below the pill (UPI only)
    *   FOOTER      : fixed, bottom 56px
    */
-  const QS=380, qbPad=10, qbSz=QS+qbPad*2;     // QR box — LOCKED size
-  const qbX=M+(W-qbSz)/2, qbY=M+466;            // QR box — LOCKED position
+  const QS=410, qbPad=10, qbSz=QS+qbPad*2;     // QR box — LOCKED size (matches reference)
+  const qbX=M+(W-qbSz)/2, qbY=M+398;            // QR box — LOCKED position (top ≈ reference)
   const HEADER_TOP=M+22, HEADER_BOT=qbY-6;
 
   // Pre-measure brand name (1 or 2 lines) to size the header band.
@@ -786,7 +789,7 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   // Emblem dimensions (scaled), if a top logo is present.
   let emblemDims=null;
   if (logoImg) {
-    const maxH=300, maxW=W*0.82;
+    const maxH=235, maxW=W*0.82;   // fits the header band above the larger locked QR
     const sc=Math.min(maxH/logoImg.naturalHeight, maxW/logoImg.naturalWidth);
     emblemDims={ w:Math.round(logoImg.naturalWidth*sc), h:Math.round(logoImg.naturalHeight*sc) };
   }
