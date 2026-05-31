@@ -89,10 +89,23 @@ const _badgeCache = {};
 // exists its fetch 404s harmlessly and falls back (canvas-drawn payment badge /
 // empty reserved centre). Service apps below are AWAITING real logo files.
 const BADGE_EXT = {
-  gpay: 'png', phonepe: 'png', paytm: 'png',           // present
-  whatsapp: 'png', instagram: 'png', google: 'png',    // awaiting files
-  wifi: 'png', url: 'png',                              // awaiting files
+  gpay: 'png', phonepe: 'png', paytm: 'png',           // payment apps
+  whatsapp: 'png', instagram: 'png', google: 'png',    // service apps
+  wifi: 'png', url: 'png',
+  'trust-secure': 'png', 'trust-fast': 'png', 'trust-reliable': 'png', // footer trust icons (SVG coming later)
 };
+const _tintCache = {};
+/* Recolour a black-on-transparent icon to `color` (its alpha becomes the mask). */
+function tintIcon(img, color) {
+  const key = (img.src||'') + '|' + color;
+  if (_tintCache[key]) return _tintCache[key];
+  const c = document.createElement('canvas'); c.width = img.naturalWidth||img.width; c.height = img.naturalHeight||img.height;
+  const x = c.getContext('2d');
+  x.drawImage(img, 0, 0);
+  x.globalCompositeOperation = 'source-in';   // keep alpha, replace colour
+  x.fillStyle = color; x.fillRect(0, 0, c.width, c.height);
+  _tintCache[key] = c; return c;
+}
 function loadBadge(name) {
   if (!(name in BADGE_EXT)) return Promise.resolve(null);
   if (_badgeCache[name]) return Promise.resolve(_badgeCache[name]);
@@ -104,7 +117,7 @@ function loadBadge(name) {
   });
 }
 // Kick off preload so they're ready by the time user clicks Generate
-['gpay','phonepe','paytm'].forEach(loadBadge);
+['gpay','phonepe','paytm','trust-secure','trust-fast','trust-reliable'].forEach(loadBadge);
 
 /* ── DOM helpers ────────────────────────────────────────────────── */
 const $   = id => document.getElementById(id);
@@ -1000,10 +1013,15 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
     const fcy = footY+footH/2, icSz=footH*0.40, icY=fcy-icSz/2;
     const trustFont=`bold 11px sans-serif`;
     ctx.font=trustFont;
+    // Prefer supplied icon images (tinted to the footer colour); fall back to
+    // the code-drawn icons if a file is missing.
+    const [secImg, fastImg, relImg] = await Promise.all([
+      loadBadge('trust-secure'), loadBadge('trust-fast'), loadBadge('trust-reliable'),
+    ]);
     const items=[
-      {label:'SECURE', draw:iconShield},
-      {label:'FAST',   draw:iconBolt},
-      {label:'RELIABLE',draw:iconThumb},
+      {label:'SECURE',  img:secImg,  draw:iconShield},
+      {label:'FAST',    img:fastImg, draw:iconBolt},
+      {label:'RELIABLE',img:relImg,  draw:iconThumb},
     ];
     const sep='  |  ';
     const sepW=ctx.measureText(sep).width;
@@ -1014,7 +1032,8 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
     const footCol = luma(pc) > 150 ? '#1a1a1a' : '#ffffff';
     ctx.fillStyle=footCol; ctx.textBaseline='middle';
     items.forEach((it,i)=>{
-      it.draw(tx,icY,icSz,footCol);
+      if (it.img) ctx.drawImage(tintIcon(it.img, footCol), tx, icY, icSz, icSz);
+      else it.draw(tx,icY,icSz,footCol);
       ctx.font=trustFont; ctx.fillStyle=footCol;
       ctx.textAlign='left';
       ctx.fillText(it.label, tx+icSz+4, fcy);
