@@ -791,7 +791,7 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
    */
   const QS=410, qbPad=10, qbSz=QS+qbPad*2;     // QR box — LOCKED size (clears the card border)
   const qbX=M+(W-qbSz)/2, qbY=M+466;            // QR box — LOCKED position
-  const HEADER_TOP=M+22, HEADER_BOT=qbY-22;     // gap below header clears the thick QR frame
+  const HEADER_TOP=M+22, HEADER_BOT=qbY-12;     // gap below header clears the tight QR frame
 
   // Pre-measure brand name (1 or 2 lines) to size the header band.
   function computeBrand() {
@@ -808,20 +808,24 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   }
   const brand=computeBrand();
 
-  // Emblem dimensions (scaled), if a top logo is present.
-  // Uploaded brand logo → dominant (235). Service badge fallback → smaller icon (130).
+  // Text advances below the emblem (must match the draw steps below).
+  const brandAdv  = brand.lines.length===1 ? brand.fs+8 : brand.lines.length*(brand.fs+4)+4;
+  const textAdv   = brandAdv + 34/*tagline*/ + 42/*action*/;
+  const bandH     = HEADER_BOT - HEADER_TOP;
+
+  // Emblem: size it DYNAMICALLY to fill the band space left after the text, so the
+  // logo is as dominant as possible but never overflows into the QR. Uploaded
+  // brand logo gets the full available height (capped); service badge stays small.
   let emblemDims=null;
   if (topLogo) {
-    // Uploaded brand logo → DOMINANT emblem (≈ reference ~300). Service badge → smaller icon.
-    const maxH = logoImg ? 300 : 130, maxW = logoImg ? W*0.84 : 200;
+    const avail = bandH - textAdv - 16/*gap*/;
+    const maxH = logoImg ? Math.min(360, Math.max(120, avail)) : 140;
+    const maxW = logoImg ? W*0.92 : 210;
     const sc=Math.min(maxH/topLogo.naturalHeight, maxW/topLogo.naturalWidth);
     emblemDims={ w:Math.round(topLogo.naturalWidth*sc), h:Math.round(topLogo.naturalHeight*sc) };
   }
-  // Header block advances (must match the draw steps below).
   const emblemAdv = emblemDims ? emblemDims.h+16 : 0;
-  const brandAdv  = brand.lines.length===1 ? brand.fs+8 : brand.lines.length*(brand.fs+4)+4;
-  const headerAdv = emblemAdv + brandAdv + 34/*tagline*/ + 42/*action*/;
-  const bandH = HEADER_BOT - HEADER_TOP;
+  const headerAdv = emblemAdv + textAdv;
   // Placement within the band:
   //   • uploaded logo  → TOP-anchor so the emblem is dominant at the top (matches reference),
   //   • vCenter toggle → centre the header in the band,
@@ -881,8 +885,8 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   // it, with a small gap — matches the reference (bhuvi_qr.png).
   ctx.fillStyle='#ffffff'; rr(qbX,qbY,qbSz,qbSz,14); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
-  ctx.strokeStyle=pc; ctx.lineWidth=7;             // thick QR frame (matches card border)
-  rr(qbX-12, qbY-12, qbSz+24, qbSz+24, 22); ctx.stroke();
+  ctx.strokeStyle=pc; ctx.lineWidth=7;             // thick QR frame, hugging the QR
+  rr(qbX-4, qbY-4, qbSz+8, qbSz+8, 16); ctx.stroke();
 
   // Device-pixel rect of the QR field (canvas is scaled by SC), for the 3D relief.
   const qrRect = {
