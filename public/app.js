@@ -441,6 +441,7 @@ function renderPreview(src) {
 function enableButtons() {
   $('btnScad').disabled = false;
   $('btnPng').disabled  = false;
+  if ($('btnSvg')) $('btnSvg').disabled = false;
 }
 
 /* ── Downloads ──────────────────────────────────────────────────── */
@@ -464,6 +465,49 @@ function downloadPNG() {
   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
   downloadBlob(new Blob([arr], { type: 'image/png' }), safeName(getFormData()) + '_qr.png');
   showStatus('PNG saved!', 'ok');
+}
+
+/* Full card as a scalable SVG: the rendered card embedded at the real print
+ * size (mm), with a sharp VECTOR QR overlaid from the matrix so the code stays
+ * crisp at any scale. Opens in Illustrator / Inkscape / browsers. */
+function downloadSVG() {
+  if (!state.pngBase64) return;
+  const cv = state.lastCard && state.lastCard.canvas;
+  const W = cv ? cv.width : 1048, H = cv ? cv.height : 2248;
+  // Physical size: long edge = the 3D plaque size (default 280mm), preserve aspect.
+  const longMM = (+val('r3dSize')) || 280;
+  const longPx = Math.max(W, H);
+  const wMM = (W / longPx) * longMM, hMM = (H / longPx) * longMM;
+
+  let qrRects = '';
+  const lay = state.lastCard && state.lastCard.layout;
+  if (lay && lay.qrRect && state.qrMatrix) {
+    // Crisp vector QR over the embedded raster (1-module quiet zone, same as the card).
+    const m = state.qrMatrix, bytes = Uint8Array.from(atob(m.data), c => c.charCodeAt(0));
+    const r = lay.qrRect, quiet = 1, cell = r.w / (m.size + quiet*2);
+    const col = (lay.qrColor || '#1a1a2e');
+    const lr = lay.logoRect;
+    const inLogo = (x,y) => lr && x>=lr.x && x<=lr.x+lr.w && y>=lr.y && y<=lr.y+lr.h;
+    let rects = '';
+    for (let row=0; row<m.size; row++) for (let c2=0; c2<m.size; c2++) {
+      if (bytes[row*m.size+c2]!==1) continue;
+      const x = r.x + (quiet+c2)*cell, y = r.y + (quiet+row)*cell;
+      if (inLogo(x+cell/2, y+cell/2)) continue;
+      rects += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cell.toFixed(2)}" height="${cell.toFixed(2)}"/>`;
+    }
+    // white field behind the vector modules
+    qrRects = `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="#ffffff"/>`
+            + `<g fill="${col}">${rects}</g>`;
+  }
+
+  const svg =
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ` +
+    `width="${wMM.toFixed(2)}mm" height="${hMM.toFixed(2)}mm" viewBox="0 0 ${W} ${H}">\n` +
+    `<image x="0" y="0" width="${W}" height="${H}" xlink:href="data:image/png;base64,${state.pngBase64}"/>\n` +
+    qrRects + `\n</svg>\n`;
+  downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), safeName(getFormData()) + '_qr.svg');
+  showStatus('SVG saved (card @ ' + Math.round(longMM) + 'mm, vector QR)', 'ok');
 }
 
 async function download3MF() {
