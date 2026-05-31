@@ -318,14 +318,12 @@ async function buildFinalCard(qrElement, data) {
       img.src = data.logoDataUrl;
     });
   }
-  let result;
-  if (data.mode === 'upi') {
-    result = await buildUpiCard(qrElement, userLogoImg, data);
-  } else {
-    const typeDef    = QR_TYPES[data.mode];
-    const svcLogoImg = typeDef && typeDef.logoName ? await loadBadge(typeDef.logoName) : null;
-    result = await buildServiceCard(qrElement, userLogoImg, svcLogoImg, data);
-  }
+  // ONE universal layout for every QR type (the locked "bhuvis" format).
+  // Service types pass their brand badge as the QR-centre fallback logo.
+  const typeDef    = QR_TYPES[data.mode];
+  const svcLogoImg = (data.mode !== 'upi' && typeDef && typeDef.logoName)
+    ? await loadBadge(typeDef.logoName) : null;
+  const result = await buildUpiCard(qrElement, userLogoImg, data, svcLogoImg);
   state.lastCard = { canvas: result.canvas, layout: result.layout };
   return result;
 }
@@ -573,19 +571,31 @@ function timeAgo(ts) {
   return Math.floor(s / 86400) + 'd ago';
 }
 
-/* ── UPI professional print card (5"×7" @100px/inch, ECC-H) ─────── */
-/*
- * W=500 (5"), H=700 with logo (7") / H=630 no logo (6.3")
- * QS=380 = 3.8" QR → 15mm quiet zone: (500-380)/2 = 60px = 15.2mm
- * Logo overlay: 22% of QS = 84px, circular clip
- * Layout: ~20% branding | ~57% QR | ~12% info | ~7% footer (46px)
+/* ── Per-mode content for the ONE universal "bhuvis" card layout ──── */
+const CARD_CFG = {
+  upi:           { action:'SCAN & PAY',     via:'VIA UPI',       badges:true,  pill:d=>d.upiId||'' },
+  url:           { action:'SCAN TO VISIT',  via:'WEBSITE',       badges:false, pill:d=>{try{return new URL(d.url).hostname;}catch{return (d.url||'').slice(0,40);}} },
+  whatsapp:      { action:'SCAN TO CHAT',   via:'VIA WHATSAPP',  badges:false, pill:d=>'+'+(d.waPhone||'').replace(/\D/g,'') },
+  instagram:     { action:'SCAN TO FOLLOW', via:'ON INSTAGRAM',  badges:false, pill:d=>'@'+(d.igUsername||'').replace(/^@/,'').trim() },
+  google_review: { action:'LEAVE A REVIEW', via:'ON GOOGLE',     badges:false, pill:()=>'★  Google Review' },
+  wifi:          { action:'SCAN TO CONNECT',via:'WI-FI NETWORK', badges:false, pill:d=>d.wifiSsid||'Network' },
+};
+
+/* ── ONE universal branded print card (5"×11" @100px/inch, ECC-H) ──
+ * The single locked "bhuvis" format used for EVERY QR type. Type-specific
+ * content (action text, via text, info pill, payment badges) comes from
+ * CARD_CFG; everything else is identical across types. `logoImg` is the top
+ * emblem + QR-centre logo; `svcLogoImg` is a brand-badge fallback for the
+ * QR centre on service types.
  */
-async function buildUpiCard(qrEl, logoImg, data) {
-  const pc        = /^#[0-9a-fA-F]{6}$/.test(data.primaryColor||'') ? data.primaryColor : '#0d2e8a';
+async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
+  const typeDef   = QR_TYPES[data.mode] || {};
+  const cfg       = CARD_CFG[data.mode] || CARD_CFG.url;
+  const pc        = /^#[0-9a-fA-F]{6}$/.test(data.primaryColor||'') ? data.primaryColor : (typeDef.defaultColor || '#0d2e8a');
   const bgColor   = /^#[0-9a-fA-F]{6}$/.test(data.bgColor||'')      ? data.bgColor      : '#ffffff';
-  const brandName = data.brandName || data.payeeName || 'Brand';
+  const brandName = data.brandName || data.payeeName || (typeDef.getLabel ? typeDef.getLabel(data) : '') || 'Brand';
   const tagline   = (data.tagline  || '').trim();
-  const upiId     = data.upiId || '';
+  const centreImg = logoImg || svcLogoImg || null;   // QR-centre logo (badge fallback)
 
   // Derive readable colours for text/lines on top of bgColor
   function luma(hex) {
@@ -736,13 +746,29 @@ async function buildUpiCard(qrEl, logoImg, data) {
     y += lh+18;
   }
 
-  // ── BRAND NAME ───────────────────────────────────────────────────
+  // ── BRAND NAME — one line if it fits at a readable size, else two lines ──
   ctx.fillStyle=textCol; ctx.textAlign='center'; ctx.textBaseline='top';
-  let fs = 32;
-  ctx.font=`900 ${fs}px sans-serif`;
-  while(ctx.measureText(brandName.toUpperCase()).width>W-32&&fs>12){fs--;ctx.font=`900 ${fs}px sans-serif`;}
-  ctx.fillText(brandName.toUpperCase(), cx, y);
-  y += fs+8;
+  {
+    const BN = brandName.toUpperCase(), maxW = W-32;
+    let fs = 32; ctx.font=`900 ${fs}px sans-serif`;
+    while(ctx.measureText(BN).width>maxW && fs>20){ fs--; ctx.font=`900 ${fs}px sans-serif`; }
+    if (ctx.measureText(BN).width <= maxW) {
+      ctx.fillText(BN, cx, y); y += fs+8;
+    } else {
+      // wrap into two lines at the space nearest the middle
+      const words = BN.split(/\s+/);
+      let best = Math.max(1, Math.round(words.length/2)), bestDiff = Infinity;
+      for (let i=1; i<words.length; i++) {
+        const d = Math.abs(words.slice(0,i).join(' ').length - words.slice(i).join(' ').length);
+        if (d < bestDiff) { bestDiff = d; best = i; }
+      }
+      const line1 = words.slice(0,best).join(' '), line2 = words.slice(best).join(' ') || '';
+      while((ctx.measureText(line1).width>maxW || ctx.measureText(line2).width>maxW) && fs>14){ fs--; ctx.font=`900 ${fs}px sans-serif`; }
+      ctx.fillText(line1, cx, y); y += fs+4;
+      if (line2) { ctx.fillText(line2, cx, y); y += fs+4; }
+      y += 4;
+    }
+  }
 
   // ── TAGLINE with flanking lines, or thin divider ──────────────────
   if (tagline) {
@@ -766,7 +792,7 @@ async function buildUpiCard(qrEl, logoImg, data) {
   // ── SCAN & PAY with flanking lines ───────────────────────────────
   y += 12;
   ctx.font='bold 16px sans-serif'; ctx.fillStyle=textCol; ctx.textBaseline='top';
-  const spTxt='SCAN & PAY', spW=ctx.measureText(spTxt).width;
+  const spTxt=cfg.action, spW=ctx.measureText(spTxt).width;
   const dl=Math.max(0,(W-spW-48)/2-6);
   ctx.strokeStyle=textCol; ctx.lineWidth=1.5;
   ctx.beginPath(); ctx.moveTo(M+16,y+10); ctx.lineTo(M+16+dl,y+10); ctx.stroke();
@@ -776,7 +802,7 @@ async function buildUpiCard(qrEl, logoImg, data) {
 
   // ── VIA UPI ───────────────────────────────────────────────────────
   ctx.font='12px sans-serif'; ctx.fillStyle=muteCol; ctx.globalAlpha=1;
-  ctx.fillText('VIA UPI', cx, y);
+  ctx.fillText(cfg.via, cx, y);
   y += 16;
 
   // ── QR BOX — fixed 380 for ALL cards: locked, consistent QR dimension ──
@@ -806,11 +832,11 @@ async function buildUpiCard(qrEl, logoImg, data) {
       else rr(ox-5, oy-5, os+10, os+10, 7);
     };
     ctx.fillStyle='#ffffff'; backing(); ctx.fill();
-    if (logoImg) {
+    if (centreImg) {
       ctx.save();
       if (logoShape === 'circle') { ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip(); }
       else { rr(ox, oy, os, os, 5); ctx.clip(); }
-      ctx.drawImage(logoImg, ox, oy, os, os); ctx.restore();
+      ctx.drawImage(centreImg, ox, oy, os, os); ctx.restore();
     }
     // Outline around the embed area (delineates the logo zone, esp. when empty).
     ctx.strokeStyle=pc; ctx.lineWidth=2.5; backing(); ctx.stroke();
@@ -819,17 +845,19 @@ async function buildUpiCard(qrEl, logoImg, data) {
   }
   y = qbY+qbSz+14;
 
-  // ── UPI ID PILL ───────────────────────────────────────────────────
+  // ── INFO PILL (UPI id / phone / @user / hostname / SSID) ──────────
   const pillH=36, pillW=W-60;
   ctx.fillStyle=pc; rr(M+30,y,pillW,pillH,pillH/2); ctx.fill();
   ctx.fillStyle='#ffffff'; ctx.font='900 20px monospace'; ctx.textBaseline='middle';
-  let uid=upiId;
+  const pillFull = (cfg.pill(data) || '').toString();
+  let uid=pillFull;
   while(ctx.measureText(uid).width>pillW-28&&uid.length>6) uid=uid.slice(0,-1);
-  if(uid!==upiId) uid+='…';
+  if(uid!==pillFull) uid+='…';
   ctx.fillText(uid, cx, y+pillH/2);
   y += pillH+10;
 
-  // ── ALL UPI APPS ACCEPTED ─────────────────────────────────────────
+  // ── Payment apps (UPI only) ───────────────────────────────────────
+  if (cfg.badges) {
   ctx.fillStyle=muteCol; ctx.font='bold 10px sans-serif'; ctx.textBaseline='top';
   ctx.fillText('ALL UPI APPS ACCEPTED', cx, y);
   y += 16;
@@ -883,6 +911,7 @@ async function buildUpiCard(qrEl, logoImg, data) {
     });
     y += bh;
   }
+  } // end cfg.badges (UPI only)
 
   // ── FOOTER ────────────────────────────────────────────────────────
   const footH=56, footY=M+H-footH;
@@ -921,191 +950,6 @@ async function buildUpiCard(qrEl, logoImg, data) {
       }
     });
   }
-
-  ctx.restore();
-  const qrCol = /^#[0-9a-fA-F]{6}$/.test(data.qrColor||'') ? data.qrColor : '#1a1a2e';
-  return {
-    dataUrl: out.toDataURL('image/png'),
-    canvas: out,
-    layout: { qrRect, logoRect, logoShape, qrColor: qrCol,
-              paletteHints: [pc, bgColor, '#ffffff', qrCol] },
-  };
-}
-
-/* ── Per-mode config for service cards ──────────────────────────── */
-const SERVICE_CFG = {
-  url: {
-    actionText: 'SCAN TO VISIT',
-    viaText:    'WEBSITE',
-    infoText: d => { try { return new URL(d.url).hostname; } catch { return (d.url||'').slice(0,40); } },
-  },
-  whatsapp: {
-    actionText: 'SCAN TO CHAT',
-    viaText:    'VIA WHATSAPP',
-    infoText: d => '+' + (d.waPhone||'').replace(/\D/g,''),
-  },
-  instagram: {
-    actionText: 'SCAN TO FOLLOW',
-    viaText:    'ON INSTAGRAM',
-    infoText: d => '@' + (d.igUsername||'').replace(/^@/,'').trim(),
-  },
-  google_review: {
-    actionText: 'LEAVE A REVIEW',
-    viaText:    'ON GOOGLE',
-    infoText: () => '★  Google Review',
-  },
-  wifi: {
-    actionText: 'SCAN TO CONNECT',
-    viaText:    'WI-FI NETWORK',
-    infoText: d => d.wifiSsid || 'Network',
-  },
-};
-
-/* ── Professional service card (WhatsApp, Instagram, Google, URL, WiFi) */
-async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
-  const typeDef  = QR_TYPES[data.mode] || {};
-  const cfg      = SERVICE_CFG[data.mode] || {};
-  const pc       = /^#[0-9a-fA-F]{6}$/.test(data.primaryColor||'') ? data.primaryColor : (typeDef.defaultColor || '#1a73e8');
-  const bgColor  = /^#[0-9a-fA-F]{6}$/.test(data.bgColor||'')      ? data.bgColor      : '#ffffff';
-  const brandName = data.brandName || (typeDef.getLabel && typeDef.getLabel(data)) || data.mode;
-  const tagline  = (data.tagline || '').trim();
-
-  function luma(hex) {
-    const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
-    return 0.299*r + 0.587*g + 0.114*b;
-  }
-  const bgDark   = luma(bgColor) < 160;
-  const textCol  = bgDark ? '#ffffff' : pc;
-  const muteCol  = bgDark ? 'rgba(255,255,255,0.55)' : pc;
-  const divAlpha = bgDark ? 0.25 : 0.13;
-
-  const W=500, M=12, SC=2;
-  const QS = 380;   // fixed for ALL cards: locked, consistent QR dimension
-  const H = 1100;   // unified 5×11 for ALL QR types
-  const out = document.createElement('canvas');
-  out.width=(W+M*2)*SC; out.height=(H+M*2)*SC;
-  const ctx=out.getContext('2d');
-  ctx.scale(SC,SC);
-  const cx=M+W/2;
-
-  function rr(x,y,w,h,r){
-    ctx.beginPath();
-    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
-    ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
-    ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
-    ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
-    ctx.closePath();
-  }
-
-  // Card shadow + background
-  ctx.shadowColor='rgba(0,0,0,0.22)'; ctx.shadowBlur=28; ctx.shadowOffsetY=8;
-  ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
-  ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
-  ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
-  ctx.save(); rr(M,M,W,H,20); ctx.clip();
-
-  // Vertically balance content when there's no dominant top logo (service
-  // cards have no bottom footer), so the unified 5×11 card isn't top-heavy.
-  let y = M+22 + (userLogoImg ? 0 : 250);
-
-  // ── USER LOGO (if uploaded) — dominant block, same as UPI card ────
-  if (userLogoImg) {
-    const maxH=350, maxW=W*0.82;
-    const sc=Math.min(maxH/userLogoImg.naturalHeight, maxW/userLogoImg.naturalWidth);
-    const lw=Math.round(userLogoImg.naturalWidth*sc), lh=Math.round(userLogoImg.naturalHeight*sc);
-    ctx.drawImage(userLogoImg, cx-lw/2, y, lw, lh);
-    y += lh+18;
-  }
-
-  // ── BRAND NAME ────────────────────────────────────────────────────
-  ctx.fillStyle=textCol; ctx.textAlign='center'; ctx.textBaseline='top';
-  let fs=32;
-  ctx.font=`900 ${fs}px sans-serif`;
-  while(ctx.measureText(brandName.toUpperCase()).width>W-32&&fs>12){fs--;ctx.font=`900 ${fs}px sans-serif`;}
-  ctx.fillText(brandName.toUpperCase(), cx, y);
-  y += fs+8;
-
-  // ── TAGLINE or thin divider ───────────────────────────────────────
-  if (tagline) {
-    const tl=tagline.toUpperCase();
-    ctx.font='12px sans-serif';
-    const tW=ctx.measureText(tl).width;
-    const ll=Math.max(0,(W-tW-48)/2-6);
-    ctx.globalAlpha=divAlpha*2; ctx.strokeStyle=textCol; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(M+16,y+8); ctx.lineTo(M+16+ll,y+8); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx+tW/2+6,y+8); ctx.lineTo(cx+tW/2+6+ll,y+8); ctx.stroke();
-    ctx.globalAlpha=0.7; ctx.fillStyle=textCol; ctx.fillText(tl, cx, y+1); ctx.globalAlpha=1;
-  } else {
-    ctx.strokeStyle=textCol; ctx.lineWidth=1; ctx.globalAlpha=divAlpha;
-    ctx.beginPath(); ctx.moveTo(M+16,y+8); ctx.lineTo(M+W-16,y+8); ctx.stroke();
-    ctx.globalAlpha=1;
-  }
-  y += 20;
-
-  // ── ACTION HEADER with flanking lines ────────────────────────────
-  y += 12;
-  const spTxt = cfg.actionText || 'SCAN QR CODE';
-  ctx.font='bold 16px sans-serif'; ctx.fillStyle=textCol; ctx.textBaseline='top';
-  const spW=ctx.measureText(spTxt).width;
-  const dl=Math.max(0,(W-spW-48)/2-6);
-  ctx.strokeStyle=textCol; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.moveTo(M+16,y+10); ctx.lineTo(M+16+dl,y+10); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(cx+spW/2+6,y+10); ctx.lineTo(cx+spW/2+6+dl,y+10); ctx.stroke();
-  ctx.fillText(spTxt, cx, y);
-  y += 22;
-
-  // ── VIA SERVICE ───────────────────────────────────────────────────
-  ctx.font='12px sans-serif'; ctx.fillStyle=muteCol;
-  ctx.fillText(cfg.viaText || '', cx, y);
-  y += 16;
-
-  // ── QR BOX ────────────────────────────────────────────────────────
-  const qbPad=10, qbSz=QS+qbPad*2;
-  const qbX=M+(W-qbSz)/2, qbY=y+8;
-  ctx.strokeStyle=pc; ctx.lineWidth=3;
-  rr(qbX,qbY,qbSz,qbSz,14); ctx.stroke();
-  ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
-  ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
-
-  // Device-pixel rect of the QR field (canvas is scaled by SC), for the 3D relief.
-  const qrRect = {
-    x: (qbX + qbPad) * SC, y: (qbY + qbPad) * SC,
-    w: QS * SC, h: QS * SC,
-  };
-
-  // ── Embedded centre logo (toggle + shape: circle|square) ──
-  const overlayImg = userLogoImg || svcLogoImg;
-  let logoRect = null;
-  const logoShape = (data.embedShape === 'square') ? 'rect' : 'circle';
-  if (data.embedLogo !== false) {
-    const os = Math.round(QS * (data.embedScale||0.22));
-    const ox = qbX+qbPad+(QS-os)/2, oy = qbY+qbPad+(QS-os)/2;
-    const backing = () => {
-      if (logoShape === 'circle') { ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, (os+10)/2, 0, Math.PI*2); }
-      else rr(ox-5, oy-5, os+10, os+10, 7);
-    };
-    ctx.fillStyle='#ffffff'; backing(); ctx.fill();
-    if (overlayImg) {
-      ctx.save();
-      if (logoShape === 'circle') { ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip(); }
-      else { rr(ox, oy, os, os, 5); ctx.clip(); }
-      ctx.drawImage(overlayImg, ox, oy, os, os);
-      ctx.restore();
-    }
-    ctx.strokeStyle=pc; ctx.lineWidth=2.5; backing(); ctx.stroke();
-    logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
-  }
-  y = qbY+qbSz+14;
-
-  // ── INFO PILL ─────────────────────────────────────────────────────
-  const infoText = cfg.infoText ? cfg.infoText(data) : (brandName || data.mode);
-  const pillH=36, pillW=W-60;
-  ctx.fillStyle=pc; rr(M+30,y,pillW,pillH,pillH/2); ctx.fill();
-  ctx.fillStyle='#ffffff'; ctx.font='900 18px monospace'; ctx.textBaseline='middle'; ctx.textAlign='center';
-  let piT=infoText;
-  while(ctx.measureText(piT).width>pillW-32&&piT.length>4) piT=piT.slice(0,-1);
-  if(piT!==infoText) piT+='…';
-  ctx.fillText(piT, cx, y+pillH/2);
 
   ctx.restore();
   const qrCol = /^#[0-9a-fA-F]{6}$/.test(data.qrColor||'') ? data.qrColor : '#1a1a2e';
