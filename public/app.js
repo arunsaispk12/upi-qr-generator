@@ -200,6 +200,7 @@ function getFormData() {
     bgColor:      val('bgColor') || '#ffffff',
     logoDataUrl:  state.logoDataUrl,
     logoType:     state.logoType,
+    embedLogo:    $('embedLogo') ? $('embedLogo').checked : true,
     baseLength:     +val('baseLength')     || 90,
     baseWidth:      +val('baseWidth')      || 90,
     baseThickness:  +val('baseThickness')  || 2,
@@ -791,15 +792,18 @@ async function buildUpiCard(qrEl, logoImg, data) {
     w: QS * SC, h: QS * SC,
   };
 
-  // Logo overlay — 22% of QS, square with rounded corners
+  // Embedded centre logo (toggle). When enabled, reserve a white backing in the
+  // QR centre and draw the logo if one is uploaded; if not, leave it blank.
   let logoRect = null;
-  if (logoImg) {
+  if (data.embedLogo !== false) {
     const os=Math.round(QS*0.22);
     const ox=qbX+qbPad+(QS-os)/2, oy=qbY+qbPad+(QS-os)/2;
     ctx.fillStyle='#ffffff'; rr(ox-5,oy-5,os+10,os+10,7); ctx.fill();
-    ctx.save(); rr(ox,oy,os,os,5); ctx.clip();
-    ctx.drawImage(logoImg,ox,oy,os,os); ctx.restore();
-    // Device-pixel rect of the logo backing, for the 3D embedded-logo relief.
+    if (logoImg) {
+      ctx.save(); rr(ox,oy,os,os,5); ctx.clip();
+      ctx.drawImage(logoImg,ox,oy,os,os); ctx.restore();
+    }
+    // Device-pixel rect of the reserved logo area, for the 3D embedded-logo relief.
     logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
   }
   y = qbY+qbSz+14;
@@ -1058,18 +1062,20 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
     w: QS * SC, h: QS * SC,
   };
 
-  // ── SERVICE LOGO in QR centre (circular clip) ─────────────────────
+  // ── Embedded centre logo (toggle) — circular backing for service cards ──
   const overlayImg = userLogoImg || svcLogoImg;
   let logoRect = null;
-  if (overlayImg) {
+  if (data.embedLogo !== false) {
     const os = Math.round(QS * 0.22);
     const ox = qbX+qbPad+(QS-os)/2, oy = qbY+qbPad+(QS-os)/2;
     ctx.fillStyle='#ffffff'; rr(ox-5,oy-5,os+10,os+10,os/2+5); ctx.fill();
-    ctx.save();
-    ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip();
-    ctx.drawImage(overlayImg, ox, oy, os, os);
-    ctx.restore();
-    // Device-pixel rect of the logo backing, for the 3D embedded-logo relief.
+    if (overlayImg) {
+      ctx.save();
+      ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip();
+      ctx.drawImage(overlayImg, ox, oy, os, os);
+      ctx.restore();
+    }
+    // Device-pixel rect of the reserved logo area, for the 3D embedded-logo relief.
     logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
   }
   y = qbY+qbSz+14;
