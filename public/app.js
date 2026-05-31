@@ -864,9 +864,12 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   ctx.fillText(cfg.via, cx, y);
 
   // ── QR BOX — drawn at the LOCKED qbY (header above adapts to it) ───
-  // Clean white rounded field (quiet zone) — no coloured frame, matches reference.
+  // White rounded field (quiet zone) + a brand-colour outline frame just outside
+  // it, with a small gap — matches the reference (bhuvi_qr.png).
   ctx.fillStyle='#ffffff'; rr(qbX,qbY,qbSz,qbSz,14); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
+  ctx.strokeStyle=pc; ctx.lineWidth=2.5;
+  rr(qbX-7, qbY-7, qbSz+14, qbSz+14, 18); ctx.stroke();
 
   // Device-pixel rect of the QR field (canvas is scaled by SC), for the 3D relief.
   const qrRect = {
@@ -1009,6 +1012,22 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
         tx+=sepW;
       }
     });
+  }
+
+  // ── CARD BORDER — brand-colour outline around the card, EXCLUDING the filled
+  // footer band (top + both sides, down to the footer top). Broad & thick.
+  {
+    const bw = 7, inset = bw/2;             // thick border
+    ctx.strokeStyle = pc; ctx.lineWidth = bw; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    const L=M+inset, R=M+W-inset, T=M+inset, r=20;
+    ctx.beginPath();
+    ctx.moveTo(L, footY);                   // up the left side from footer top
+    ctx.lineTo(L, T+r);
+    ctx.quadraticCurveTo(L, T, L+r, T);     // top-left corner
+    ctx.lineTo(R-r, T);
+    ctx.quadraticCurveTo(R, T, R, T+r);     // top-right corner
+    ctx.lineTo(R, footY);                   // down the right side to footer top
+    ctx.stroke();
   }
 
   ctx.restore();
