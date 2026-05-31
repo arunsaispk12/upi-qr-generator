@@ -803,6 +803,8 @@ async function buildUpiCard(qrEl, logoImg, data) {
       ctx.save(); rr(ox,oy,os,os,5); ctx.clip();
       ctx.drawImage(logoImg,ox,oy,os,os); ctx.restore();
     }
+    // Outline around the embed area (delineates the logo zone, esp. when empty).
+    ctx.strokeStyle=pc; ctx.lineWidth=2.5; rr(ox-5,oy-5,os+10,os+10,7); ctx.stroke();
     // Device-pixel rect of the reserved logo area, for the 3D embedded-logo relief.
     logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
   }
@@ -1075,6 +1077,9 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
       ctx.drawImage(overlayImg, ox, oy, os, os);
       ctx.restore();
     }
+    // Circular outline around the embed area.
+    ctx.strokeStyle=pc; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, (os+10)/2, 0, Math.PI*2); ctx.stroke();
     // Device-pixel rect of the reserved logo area, for the 3D embedded-logo relief.
     logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
   }
