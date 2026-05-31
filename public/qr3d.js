@@ -191,7 +191,9 @@ function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, logoShape
     cx.globalCompositeOperation = 'source-over';
     cx.fillStyle = '#ffffff';
     cx.save(); cx.beginPath();
-    cx.rect(0,0,work,work); cx.arc(work/2, work/2, work/2, 0, Math.PI*2); cx.fill('evenodd');
+    cx.rect(0,0,work,work);
+    cx.moveTo(work, work/2); cx.arc(work/2, work/2, work/2, 0, Math.PI*2);
+    cx.fill('evenodd'); // paint white into the corners outside the circle
     cx.restore();
   }
   const img = cx.getImageData(0, 0, work, work);
