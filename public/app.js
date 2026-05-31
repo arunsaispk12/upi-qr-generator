@@ -467,22 +467,45 @@ function downloadPNG() {
   showStatus('PNG saved!', 'ok');
 }
 
-/* Full card as a scalable SVG: the rendered card embedded at the real print
- * size (mm), with a sharp VECTOR QR overlaid from the matrix so the code stays
- * crisp at any scale. Opens in Illustrator / Inkscape / browsers. */
+function _xmlEsc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+/* Convert a recorded canvas text draw → a crisp SVG <text> element (coords ×SC). */
+function _textToSvg(t, SC) {
+  const mSize = /([\d.]+)px/.exec(t.font);
+  const sizePx = (mSize ? parseFloat(mSize[1]) : 12) * SC;
+  let weight = 'normal';
+  const mW = /^\s*(\d{3}|bold|bolder|lighter)/.exec(t.font); if (mW) weight = mW[1];
+  const family = /px\s+(.+)$/.exec(t.font); const fam = family ? family[1] : 'sans-serif';
+  const anchor = t.align === 'center' ? 'middle' : (t.align === 'right' || t.align === 'end') ? 'end' : 'start';
+  const baseline = t.baseline === 'middle' ? 'central'
+                 : t.baseline === 'top' ? 'text-before-edge' : 'alphabetic';
+  const op = (t.alpha != null && t.alpha < 1) ? ` opacity="${(+t.alpha).toFixed(2)}"` : '';
+  return `<text x="${(t.x*SC).toFixed(1)}" y="${(t.y*SC).toFixed(1)}" `
+       + `font-family="${_xmlEsc(fam)}" font-size="${sizePx.toFixed(1)}" font-weight="${weight}" `
+       + `fill="${t.fill}" text-anchor="${anchor}" dominant-baseline="${baseline}"${op}>`
+       + `${_xmlEsc(t.str)}</text>`;
+}
+
+/* Full card as a scalable SVG at real print size (mm):
+ *  • the rendered card embedded as the base raster (logos/badges/shapes), plus
+ *  • a sharp VECTOR QR from the matrix, with the embedded centre logo restored
+ *    on top (cropped from the card) so the white field doesn't hide it, plus
+ *  • crisp VECTOR text redrawn from the recorded draws (layout.texts).
+ * Opens in Illustrator / Inkscape / browsers. */
 function downloadSVG() {
   if (!state.pngBase64) return;
-  const cv = state.lastCard && state.lastCard.canvas;
+  const lay = state.lastCard && state.lastCard.layout;
+  const cv  = state.lastCard && state.lastCard.canvas;
   const W = cv ? cv.width : 1048, H = cv ? cv.height : 2248;
-  // Physical size: long edge = the 3D plaque size (default 280mm), preserve aspect.
+  const SC = (lay && lay.sc) || 2;
   const longMM = (+val('r3dSize')) || 280;
   const longPx = Math.max(W, H);
   const wMM = (W / longPx) * longMM, hMM = (H / longPx) * longMM;
 
-  let qrRects = '';
-  const lay = state.lastCard && state.lastCard.layout;
+  // ── Vector QR + restored embedded logo ──
+  let qrLayer = '';
   if (lay && lay.qrRect && state.qrMatrix) {
-    // Crisp vector QR over the embedded raster (1-module quiet zone, same as the card).
     const m = state.qrMatrix, bytes = Uint8Array.from(atob(m.data), c => c.charCodeAt(0));
     const r = lay.qrRect, quiet = 1, cell = r.w / (m.size + quiet*2);
     const col = (lay.qrColor || '#1a1a2e');
@@ -495,19 +518,32 @@ function downloadSVG() {
       if (inLogo(x+cell/2, y+cell/2)) continue;
       rects += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cell.toFixed(2)}" height="${cell.toFixed(2)}"/>`;
     }
-    // white field behind the vector modules
-    qrRects = `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="#ffffff"/>`
+    qrLayer = `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="#ffffff"/>`
             + `<g fill="${col}">${rects}</g>`;
+    // Restore the embedded centre logo (cropped from the card) ON TOP of the
+    // white field so the QR overlay doesn't hide it.
+    if (lr && cv) {
+      try {
+        const lc = document.createElement('canvas'); lc.width = Math.round(lr.w); lc.height = Math.round(lr.h);
+        lc.getContext('2d').drawImage(cv, lr.x, lr.y, lr.w, lr.h, 0, 0, lc.width, lc.height);
+        qrLayer += `<image x="${lr.x}" y="${lr.y}" width="${lr.w}" height="${lr.h}" `
+                 + `xlink:href="${lc.toDataURL('image/png')}"/>`;
+      } catch (e) { /* logo crop tainted/failed → leave QR field */ }
+    }
   }
+
+  // ── Vector text (redrawn from the recorded draws) ──
+  let textLayer = '';
+  if (lay && Array.isArray(lay.texts)) textLayer = lay.texts.map(t => _textToSvg(t, SC)).join('');
 
   const svg =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ` +
     `width="${wMM.toFixed(2)}mm" height="${hMM.toFixed(2)}mm" viewBox="0 0 ${W} ${H}">\n` +
     `<image x="0" y="0" width="${W}" height="${H}" xlink:href="data:image/png;base64,${state.pngBase64}"/>\n` +
-    qrRects + `\n</svg>\n`;
+    qrLayer + `\n` + textLayer + `\n</svg>\n`;
   downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), safeName(getFormData()) + '_qr.svg');
-  showStatus('SVG saved (card @ ' + Math.round(longMM) + 'mm, vector QR)', 'ok');
+  showStatus('SVG saved (card @ ' + Math.round(longMM) + 'mm — vector QR, logo & text)', 'ok');
 }
 
 async function download3MF() {
@@ -710,6 +746,19 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   const ctx=out.getContext('2d');
   ctx.scale(SC,SC);
   const cx=M+W/2;
+
+  // ── Additive text capture (for the vector-SVG export) ───────────────
+  // Wrap fillText so every text draw is RECORDED (string + position + font +
+  // colour + alignment), while still drawing exactly as before. This changes
+  // nothing about how the card looks — it only lets the SVG export redraw the
+  // text as crisp vector. Coords are logical (pre-SC); store SC to scale later.
+  const _texts = [];
+  const _origFillText = ctx.fillText.bind(ctx);
+  ctx.fillText = function(str, x, y) {
+    _texts.push({ str, x, y, font: ctx.font, fill: ctx.fillStyle,
+                  align: ctx.textAlign, baseline: ctx.textBaseline, alpha: ctx.globalAlpha });
+    return _origFillText(str, x, y);
+  };
 
   function rr(x,y,w,h,r){
     ctx.beginPath();
@@ -1109,7 +1158,8 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
     dataUrl: out.toDataURL('image/png'),
     canvas: out,
     layout: { qrRect, logoRect, logoShape, qrColor: qrCol,
-              paletteHints: [pc, bgColor, '#ffffff', qrCol] },
+              paletteHints: [pc, bgColor, '#ffffff', qrCol],
+              texts: _texts, sc: SC, cardW: (W+M*2)*SC, cardH: (H+M*2)*SC },
   };
 }
 
