@@ -776,9 +776,9 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
    *   BADGES      : fixed, below the pill (UPI only)
    *   FOOTER      : fixed, bottom 56px
    */
-  const QS=410, qbPad=10, qbSz=QS+qbPad*2;     // QR box — LOCKED size (matches reference)
-  const qbX=M+(W-qbSz)/2, qbY=M+398;            // QR box — LOCKED position (top ≈ reference)
-  const HEADER_TOP=M+22, HEADER_BOT=qbY-6;
+  const QS=450, qbPad=10, qbSz=QS+qbPad*2;     // QR box — LOCKED size (dominant, matches reference)
+  const qbX=M+(W-qbSz)/2, qbY=M+405;            // QR box — LOCKED position (sits lower → fills toward footer)
+  const HEADER_TOP=M+22, HEADER_BOT=qbY-16;     // extra gap below header for the thick QR frame
 
   // Pre-measure brand name (1 or 2 lines) to size the header band.
   function computeBrand() {
@@ -868,8 +868,8 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   // it, with a small gap — matches the reference (bhuvi_qr.png).
   ctx.fillStyle='#ffffff'; rr(qbX,qbY,qbSz,qbSz,14); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
-  ctx.strokeStyle=pc; ctx.lineWidth=2.5;
-  rr(qbX-7, qbY-7, qbSz+14, qbSz+14, 18); ctx.stroke();
+  ctx.strokeStyle=pc; ctx.lineWidth=7;             // thick QR frame (matches card border)
+  rr(qbX-12, qbY-12, qbSz+24, qbSz+24, 22); ctx.stroke();
 
   // Device-pixel rect of the QR field (canvas is scaled by SC), for the 3D relief.
   const qrRect = {
@@ -902,10 +902,16 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
     // Device-pixel rect of the reserved logo area, for the 3D embedded-logo relief.
     logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
   }
-  y = qbY+qbSz+14;
+
+  // ── BELOW-QR BLOCK (pill [+ badges]) — centred in the gap between the QR and
+  // the footer so there's no empty space dumped at the bottom. ──────
+  const pillH=36, pillW=W-60;
+  const _badgeBh=40;
+  const belowGroupH = cfg.badges ? (pillH + 10 + 16 + _badgeBh) : pillH;
+  const _belowTop = qbY+qbSz, _footerTop = M+H-56;
+  y = _belowTop + Math.max(14, Math.round((_footerTop - _belowTop - belowGroupH)/2));
 
   // ── INFO PILL (UPI id / phone / @user / hostname / SSID) ──────────
-  const pillH=36, pillW=W-60;
   ctx.fillStyle=pc; rr(M+30,y,pillW,pillH,pillH/2); ctx.fill();
   // Dark text on a light/gold pill, white on a dark pill (matches reference).
   ctx.fillStyle = luma(pc) > 150 ? '#1a1a1a' : '#ffffff';
