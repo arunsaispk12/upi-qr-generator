@@ -147,20 +147,34 @@
     </div>
 
     <div class="field">
-      <label>
-        Logo (PNG, JPG or SVG - max 2 MB)
-        <span class="muted-note" id="svgNote" style="display:none;"> SVG enables 3D logo extrusion</span>
-      </label>
+      <label>Card logo image (PNG / JPG — max 2 MB)</label>
+      <span class="muted-note">Used for the printed/PNG card (top emblem + QR centre).</span>
       <div class="logo-upload-row">
-        <label class="logo-upload-btn" for="logoFile">Upload logo</label>
+        <label class="logo-upload-btn" for="logoFile">Upload image</label>
         <input type="file" id="logoFile"
-               accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml"
+               accept=".png,.jpg,.jpeg,image/png,image/jpeg"
                style="display:none" onchange="handleLogoUpload(this)" />
         <button class="logo-clear-btn" id="logoClear"
                 onclick="clearLogo()" style="display:none;">Remove</button>
       </div>
       <div class="logo-preview-wrap" id="logoPreviewWrap" style="display:none;">
         <img id="logoPreview" src="" alt="logo preview" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label>3D model logo (SVG — max 2 MB)</label>
+      <span class="muted-note">Vector logo used only for the 3D relief's QR-centre (crisp). Optional — falls back to the card image.</span>
+      <div class="logo-upload-row">
+        <label class="logo-upload-btn" for="svgLogoFile">Upload SVG</label>
+        <input type="file" id="svgLogoFile"
+               accept=".svg,image/svg+xml"
+               style="display:none" onchange="handleSvgLogoUpload(this)" />
+        <button class="logo-clear-btn" id="svgLogoClear"
+                onclick="clearSvgLogo()" style="display:none;">Remove</button>
+      </div>
+      <div class="logo-preview-wrap" id="svgLogoPreviewWrap" style="display:none;">
+        <img id="svgLogoPreview" src="" alt="svg logo preview" />
       </div>
     </div>
 

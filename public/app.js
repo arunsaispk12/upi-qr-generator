@@ -73,8 +73,9 @@ let state = {
   scadContent:       null,
   isZip:             false,
   filename:          'qr',
-  logoDataUrl:       null,
+  logoDataUrl:       null,   // card logo image (PNG/JPG) — used for the 2D card
   logoType:          null,
+  svgLogoUrl:        null,   // 3D-only vector logo (SVG) for the relief QR centre
   lastCard:          null,   // { canvas, layout } from the most recent successful build
   qrMatrix:          null,   // { size, data } base64 from the server, or null offline
   group3d:           null,   // THREE.Group cached from the last 3D build
@@ -154,14 +155,10 @@ function handleLogoUpload(input) {
   const reader = new FileReader();
   reader.onload = e => {
     state.logoDataUrl = e.target.result;
-    state.logoType    = file.type === 'image/svg+xml' ? 'svg' : 'png';
+    state.logoType    = 'png';
     $('logoPreview').src              = e.target.result;
     $('logoPreviewWrap').style.display = '';
     $('logoClear').style.display      = 'inline-flex';
-    $('svgNote').style.display        = state.logoType === 'svg' ? 'inline' : 'none';
-    if (state.logoType === 'svg') {
-      $('scadDesc').textContent = 'SVG logo: download is a .zip (plate.scad + logo.svg). Extract both before opening in OpenSCAD.';
-    }
   };
   reader.readAsDataURL(file);
 }
@@ -172,8 +169,31 @@ function clearLogo() {
   $('logoFile').value               = '';
   $('logoPreviewWrap').style.display = 'none';
   $('logoClear').style.display       = 'none';
-  $('svgNote').style.display         = 'none';
-  $('scadDesc').textContent          = 'Parametric 3D model - render in OpenSCAD - export STL - print.';
+}
+
+/* SVG logo — for the 3D relief QR-centre only (kept separate from the card image). */
+function handleSvgLogoUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { showStatus('SVG must be under 2 MB', 'err'); input.value=''; return; }
+  if (!/svg/.test(file.type) && !/\.svg$/i.test(file.name)) { showStatus('Please choose an .svg file', 'err'); input.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    state.svgLogoUrl = e.target.result;
+    $('svgLogoPreview').src              = e.target.result;
+    $('svgLogoPreviewWrap').style.display = '';
+    $('svgLogoClear').style.display      = 'inline-flex';
+    state.group3d = null; // force the 3D model to rebuild with the new logo
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearSvgLogo() {
+  state.svgLogoUrl = null;
+  $('svgLogoFile').value                = '';
+  $('svgLogoPreviewWrap').style.display = 'none';
+  $('svgLogoClear').style.display       = 'none';
+  state.group3d = null;
 }
 
 /* ── Collect form data ──────────────────────────────────────────── */
@@ -1068,7 +1088,7 @@ function switchTab(name, el) {
   else if (window.QR3D) window.QR3D.disposePreview();
 }
 
-function show3DTab() {
+async function show3DTab() {
   const msg = $('msg3d');
   if (!window.QR3D) { msg.textContent = '3D module still loading — try again in a moment.'; return; }
   if (!state.lastCard || !state.qrMatrix) {
@@ -1083,7 +1103,7 @@ function show3DTab() {
         size: state.qrMatrix.size,
         data: Uint8Array.from(atob(state.qrMatrix.data), c => c.charCodeAt(0)),
       };
-      state.group3d = window.QR3D.build(state.lastCard.canvas, state.lastCard.layout, matrix, relief3dOpts());
+      state.group3d = window.QR3D.build(state.lastCard.canvas, state.lastCard.layout, matrix, await relief3dOpts());
     }
     window.QR3D.mountPreview(state.group3d, $('viewer3d'));
     $('btn3mf').disabled = false; $('btnStlNew').disabled = false;
@@ -1098,13 +1118,27 @@ function show3DTab() {
   }
 }
 
-/* Read the 3D Relief sliders into qr3d.build() options. */
-function relief3dOpts() {
+/* Load the uploaded SVG logo into an Image for crisp rasterisation in the 3D
+ * relief. Cached on state; resolves null if there is no SVG. */
+function loadSvgLogoImg() {
+  if (!state.svgLogoUrl) return Promise.resolve(null);
+  if (state._svgLogoImg && state._svgLogoImg.__src === state.svgLogoUrl) return Promise.resolve(state._svgLogoImg);
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload  = () => { img.__src = state.svgLogoUrl; state._svgLogoImg = img; resolve(img); };
+    img.onerror = () => resolve(null);
+    img.src = state.svgLogoUrl;
+  });
+}
+
+/* Read the 3D Relief sliders (+ optional SVG logo) into qr3d.build() options. */
+async function relief3dOpts() {
   const num = (id, d) => { const el = $(id); const v = el ? parseFloat(el.value) : NaN; return isNaN(v) ? d : v; };
   const o = {
     baseThickness: num('r3dThickness', 2),
     layerHeight:   num('r3dRelief', 0.8),
     colors:        Math.round(num('r3dColors', 4)),
+    logoSvgImg:    await loadSvgLogoImg(),   // crisp 3D centre logo (or null → card crop)
   };
   const size = num('r3dSize', 0);
   if (size > 0) o.longEdgeMM = size;   // 0 = auto (real card size)
@@ -1112,7 +1146,7 @@ function relief3dOpts() {
 }
 
 /* Rebuild the cached 3D model from the current card + sliders and re-mount. */
-function rebuild3D() {
+async function rebuild3D() {
   if (!window.QR3D || !state.lastCard || !state.qrMatrix) return;
   const panel = $('tab-3d');
   if (!panel || panel.classList.contains('hidden')) return; // only when 3D tab is visible
@@ -1121,7 +1155,7 @@ function rebuild3D() {
     data: Uint8Array.from(atob(state.qrMatrix.data), c => c.charCodeAt(0)),
   };
   try {
-    state.group3d = window.QR3D.build(state.lastCard.canvas, state.lastCard.layout, matrix, relief3dOpts());
+    state.group3d = window.QR3D.build(state.lastCard.canvas, state.lastCard.layout, matrix, await relief3dOpts());
     window.QR3D.mountPreview(state.group3d, $('viewer3d'));
     $('btn3mf').disabled = false; $('btnStlNew').disabled = false;
   } catch (e) {

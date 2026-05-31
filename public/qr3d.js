@@ -162,7 +162,9 @@ export function build(canvas, layout, matrix, opts = {}) {
     { cellHeightMM: layerH, baseZ: layerH, logoRect: logoRectMM, logoShape,
       moduleColor: layout.qrColor || 0x000000 });
   if (lr) {
-    try { buildCenterLogo(canvas, lr, logoRectMM, layerH, logoShape).children.forEach(m => qrGroup.add(m)); }
+    // Prefer the dedicated SVG logo (crisp vector) for the 3D centre; else crop
+    // the rendered card canvas.
+    try { buildCenterLogo(canvas, lr, logoRectMM, layerH, logoShape, opts.logoSvgImg || null).children.forEach(m => qrGroup.add(m)); }
     catch (e) { console.warn('centre logo skipped', e.message); }
   }
   qrGroup.position.z = baseT;
@@ -177,12 +179,20 @@ export function build(canvas, layout, matrix, opts = {}) {
  * dark; the remaining clusters extrude as the raised logo. Returns a THREE.Group
  * whose meshes sit at z=heightMM (on top of the QR field), in qrRectMM coords.
  */
-function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, logoShape = 'rect') {
-  const work = 160; // higher res → crisper logo silhouette
+function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, logoShape = 'rect', svgImg = null) {
+  const work = svgImg ? 256 : 160; // SVG → render larger for a crisper silhouette
   const cc = document.createElement('canvas'); cc.width = work; cc.height = work;
   const cx = cc.getContext('2d');
   cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, work, work); // flatten transparency to white
-  cx.drawImage(srcCanvas, logoRectDev.x, logoRectDev.y, logoRectDev.w, logoRectDev.h, 0, 0, work, work);
+  if (svgImg && svgImg.width && svgImg.height) {
+    // Crisp vector logo: contain-fit into the work square (small inset).
+    const pad = work * 0.06, avail = work - pad*2;
+    const s = Math.min(avail / svgImg.width, avail / svgImg.height);
+    const dw = svgImg.width * s, dh = svgImg.height * s;
+    cx.drawImage(svgImg, (work-dw)/2, (work-dh)/2, dw, dh);
+  } else {
+    cx.drawImage(srcCanvas, logoRectDev.x, logoRectDev.y, logoRectDev.w, logoRectDev.h, 0, 0, work, work);
+  }
   // Service cards use a circular logo backing: mask the crop to a circle so the
   // square corners don't extrude as stray relief.
   if (logoShape === 'circle') {
