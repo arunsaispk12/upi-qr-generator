@@ -494,37 +494,14 @@ function _textToSvg(t, SC) {
        + `${_xmlEsc(t.str)}</text>`;
 }
 
-/* Fetch + cache a logo's original SVG text, with x/y/size injected for nesting. */
-const _svgFileCache = {};
-async function _fetchLogoSvg(name) {
-  if (name in _svgFileCache) return _svgFileCache[name];
-  try {
-    const res = await fetch(`/logos/${name}.svg`);
-    if (!res.ok) { _svgFileCache[name] = null; return null; }
-    const s = (await res.text()).replace(/<\?xml[^>]*\?>/i,'').replace(/<!DOCTYPE[^>]*>/i,'').trim();
-    _svgFileCache[name] = s; return s;
-  } catch (e) { _svgFileCache[name] = null; return null; }
-}
-function _placeSvg(svgText, x, y, w, h) {
-  return svgText.replace(/<svg\b([^>]*)>/i, (mm, attrs) => {
-    // Strip any existing width/height/x/y/preserveAspectRatio so we don't create
-    // duplicate attributes (which is an XML error); keep the viewBox.
-    const a = attrs
-      .replace(/\swidth="[^"]*"/i,'').replace(/\sheight="[^"]*"/i,'')
-      .replace(/\sx="[^"]*"/i,'').replace(/\sy="[^"]*"/i,'')
-      .replace(/\spreserveAspectRatio="[^"]*"/i,'');
-    return `<svg${a} x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" preserveAspectRatio="xMidYMid meet">`;
-  });
-}
-
-/* Full card as a scalable SVG at real print size (mm):
- *  • base raster of the card (background, shapes, pill, footer), plus
+/* Full card as a scalable SVG at real print size (mm), matching the PNG:
+ *  • base raster of the card (background, logos, badges, pill, footer — in colour), plus
  *  • a sharp VECTOR QR (single continuous merged path — no internal seams), plus
+ *  • the embedded centre logo re-placed on top of the QR field (so it isn't hidden), plus
  *  • the embed-area OUTLINE (circle/square) in the brand colour, plus
- *  • logos drawn from their ORIGINAL .svg files where available (vector), or a
- *    raster crop for the centre logo when there's no SVG (e.g. uploaded PNG), plus
  *  • crisp VECTOR text redrawn from the recorded draws.
- * Opens in Illustrator / Inkscape / browsers. */
+ * Logos/badges stay raster colour (overlaying their black SVG traces would
+ * double/blacken them). Opens in Illustrator / Inkscape / browsers. */
 async function downloadSVG() {
   if (!state.pngBase64) return;
   const lay = state.lastCard && state.lastCard.layout;
@@ -569,25 +546,24 @@ async function downloadSVG() {
     }
   }
 
-  // ── Logo overlays: original SVG file where available, else raster crop ──
+  // ── Restore the embedded CENTRE logo only ──
+  // Every logo (top emblem + payment/service badges) is already drawn — in its
+  // correct COLOUR — in the base raster, so we must NOT overlay the black SVG
+  // traces on top (that doubles/blackens them). The one logo the vector QR hides
+  // is the QR-centre logo: crop it from the card (colour) and re-place it on top
+  // of the white QR field so it stays visible. This keeps the SVG matching the PNG.
   let logoLayer = '';
   const imgs = (lay && Array.isArray(lay.images)) ? lay.images : [];
-  const inLogoRect = (im) => lr && (im.x*SC+im.w*SC/2)>=lr.x && (im.x*SC+im.w*SC/2)<=lr.x+lr.w
-                                && (im.y*SC+im.h*SC/2)>=lr.y && (im.y*SC+im.h*SC/2)<=lr.y+lr.h;
-  for (const im of imgs) {
-    const x=im.x*SC, y=im.y*SC, w=im.w*SC, h=im.h*SC;
-    const name = (im.src.match(/\/logos\/([\w-]+)\.[a-z0-9]+/i) || [])[1];
-    if (name) {
-      const svgText = await _fetchLogoSvg(name);
-      if (svgText) { logoLayer += _placeSvg(svgText, x, y, w, h); continue; }
-    }
-    // No SVG (uploaded raster / QR canvas / tinted icon). Only re-place the CENTRE
-    // logo (it's hidden by the QR white field); others are already in the base raster.
-    if (im.src.startsWith('data:') && inLogoRect(im) && cv) {
+  const centreOf = (im) => ({ cxp: im.x*SC + im.w*SC/2, cyp: im.y*SC + im.h*SC/2 });
+  const inLogoRect = (im) => { const c=centreOf(im); return lr && c.cxp>=lr.x && c.cxp<=lr.x+lr.w && c.cyp>=lr.y && c.cyp<=lr.y+lr.h; };
+  if (lr && cv) {
+    const centre = imgs.find(inLogoRect);
+    if (centre) {
+      const x=centre.x*SC, y=centre.y*SC, w=centre.w*SC, h=centre.h*SC;
       try {
         const c2=document.createElement('canvas'); c2.width=Math.round(w); c2.height=Math.round(h);
         c2.getContext('2d').drawImage(cv, x, y, w, h, 0, 0, c2.width, c2.height);
-        logoLayer += `<image x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" xlink:href="${c2.toDataURL('image/png')}"/>`;
+        logoLayer = `<image x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" xlink:href="${c2.toDataURL('image/png')}"/>`;
       } catch (e) { /* tainted → skip */ }
     }
   }
