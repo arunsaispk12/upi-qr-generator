@@ -722,7 +722,7 @@ async function buildUpiCard(qrEl, logoImg, data) {
 
   // Vertically balance content when there's no dominant top logo, so the
   // unified 5×11 card isn't top-heavy (footer stays bottom-anchored).
-  let y = M+22 + (logoImg ? 0 : 150);
+  let y = M+22 + (logoImg ? 0 : 200);
 
   // ── LOGO — dominant 3.5" (350px) block ───────────────────────────
   if (logoImg) {
@@ -776,9 +776,8 @@ async function buildUpiCard(qrEl, logoImg, data) {
   ctx.fillText('VIA UPI', cx, y);
   y += 16;
 
-  // ── QR BOX — bigger when there's no top logo, to fill the 5×11 card.
-  // 460 keeps qbSz=480 inside W=500 so the box border isn't clipped at the edges.
-  const QS=logoImg?380:460, qbPad=10, qbSz=QS+qbPad*2;
+  // ── QR BOX — fixed 380 for ALL cards: locked, consistent QR dimension ──
+  const QS=380, qbPad=10, qbSz=QS+qbPad*2;
   const qbX=M+(W-qbSz)/2, qbY=y+8;
   ctx.strokeStyle=pc; ctx.lineWidth=3;
   rr(qbX,qbY,qbSz,qbSz,14); ctx.stroke();
@@ -966,7 +965,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
   const divAlpha = bgDark ? 0.25 : 0.13;
 
   const W=500, M=12, SC=2;
-  const QS = userLogoImg ? 380 : 460;   // bigger QR when no top logo, to fill 5×11 (qbSz=480 < W)
+  const QS = 380;   // fixed for ALL cards: locked, consistent QR dimension
   const H = 1100;   // unified 5×11 for ALL QR types
   const out = document.createElement('canvas');
   out.width=(W+M*2)*SC; out.height=(H+M*2)*SC;
@@ -992,7 +991,7 @@ async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
 
   // Vertically balance content when there's no dominant top logo (service
   // cards have no bottom footer), so the unified 5×11 card isn't top-heavy.
-  let y = M+22 + (userLogoImg ? 0 : 200);
+  let y = M+22 + (userLogoImg ? 0 : 250);
 
   // ── USER LOGO (if uploaded) — dominant block, same as UPI card ────
   if (userLogoImg) {
