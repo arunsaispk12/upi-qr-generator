@@ -515,6 +515,53 @@ function _textToSvg(t, SC) {
        + `${_xmlEsc(t.str)}</text>`;
 }
 
+/* Build a single SVG path that is the UNION OUTLINE of all dark QR modules:
+ * boundary edges only (no edges shared between two dark cells → no internal
+ * seams), chained into closed loops, with collinear points merged. Filled with
+ * fill-rule=evenodd so enclosed light regions punch through. Result is clean,
+ * continuous geometry ideal for extrusion (Fusion / slicers). Integer grid coords.
+ *   isDark(row,col) → bool;  grid placed at (ox,oy) with `cell` px modules. */
+function _qrOutlinePath(isDark, size, ox, oy, cell) {
+  const key = (x,y) => x + '_' + y;
+  const out = new Map();                       // start point → [end points]
+  const push = (x1,y1,x2,y2) => { const k=key(x1,y1); (out.get(k) || out.set(k,[]).get(k)).push([x2,y2]); };
+  // Emit each side clockwise around the filled cell, only where the neighbour is light.
+  for (let r=0; r<size; r++) for (let c=0; c<size; c++) {
+    if (!isDark(r,c)) continue;
+    if (!isDark(r-1,c)) push(c,   r,   c+1, r);     // top    →
+    if (!isDark(r,c+1)) push(c+1, r,   c+1, r+1);   // right  ↓
+    if (!isDark(r+1,c)) push(c+1, r+1, c,   r+1);   // bottom ←
+    if (!isDark(r,c-1)) push(c,   r+1, c,   r);     // left   ↑
+  }
+  const W = (gx,gy) => (ox + gx*cell) + ' ' + (oy + gy*cell);
+  let d = '';
+  for (const startK of out.keys()) {
+    let arr = out.get(startK);
+    while (arr && arr.length) {
+      const [sx, sy] = startK.split('_').map(Number);
+      const loop = [[sx, sy]];                 // unique vertices (no trailing dup)
+      let [cx, cy] = arr.pop();
+      while (!(cx === sx && cy === sy)) {
+        loop.push([cx, cy]);
+        const nexts = out.get(key(cx, cy));
+        if (!nexts || !nexts.length) break;     // open loop (shouldn't happen) → stop
+        const [nx, ny] = nexts.pop();
+        cx = nx; cy = ny;
+      }
+      // Drop collinear midpoints on the closed cycle (each straight run = 1 segment).
+      const n = loop.length, pts = [];
+      for (let i=0; i<n; i++) {
+        const a = loop[(i-1+n)%n], b = loop[i], c2 = loop[(i+1)%n];
+        const collinear = (b[0]-a[0])*(c2[1]-b[1]) === (b[1]-a[1])*(c2[0]-b[0]);
+        if (!collinear) pts.push(b);
+      }
+      if (pts.length >= 3) d += 'M' + pts.map(p => W(p[0], p[1])).join('L') + 'Z';
+      arr = out.get(startK);
+    }
+  }
+  return d;
+}
+
 /* Full card as a scalable SVG at real print size (mm), matching the PNG:
  *  • base raster of the card (background, logos, badges, pill, footer — in colour), plus
  *  • a sharp VECTOR QR (single continuous merged path — no internal seams), plus
@@ -539,25 +586,24 @@ async function downloadSVG() {
   const lr = lay && lay.logoRect;
   if (lay && lay.qrRect && state.qrMatrix) {
     const m = state.qrMatrix, bytes = Uint8Array.from(atob(m.data), c => c.charCodeAt(0));
-    const r = lay.qrRect, quiet = 1, cell = r.w / (m.size + quiet*2);
+    const r = lay.qrRect, quiet = 1;
     const col = (lay.qrColor || '#1a1a2e');
+    // INTEGER cell + integer origin → module edges land on a pixel boundary (crisp,
+    // no blur) and align cleanly for extrusion. Centre the grid in the field.
+    const cell = Math.floor(r.w / (m.size + quiet*2));
+    const gridSize = cell * m.size;
+    const ox = Math.round(r.x + (r.w - gridSize) / 2);
+    const oy = Math.round(r.y + (r.h - gridSize) / 2);
     const inLogo = (x,y) => lr && x>=lr.x && x<=lr.x+lr.w && y>=lr.y && y<=lr.y+lr.h;
-    const isDark = (row,c2) => bytes[row*m.size+c2] === 1 &&
-      !inLogo(r.x+(quiet+c2+0.5)*cell, r.y+(quiet+row+0.5)*cell);
-    let d = '';
-    for (let row=0; row<m.size; row++) {
-      let c2 = 0;
-      while (c2 < m.size) {
-        if (!isDark(row, c2)) { c2++; continue; }
-        let run = 1;
-        while (c2+run < m.size && isDark(row, c2+run)) run++;
-        const x = r.x + (quiet+c2)*cell, y = r.y + (quiet+row)*cell, ww = run*cell;
-        d += `M${x.toFixed(2)} ${y.toFixed(2)}h${ww.toFixed(2)}v${cell.toFixed(2)}h${(-ww).toFixed(2)}z`;
-        c2 += run;
-      }
-    }
+    const isDark = (row,c2) => row>=0 && row<m.size && c2>=0 && c2<m.size &&
+      bytes[row*m.size+c2] === 1 && !inLogo(ox+(c2+0.5)*cell, oy+(row+0.5)*cell);
+    // Trace the UNION BOUNDARY of all dark modules: emit a unit edge only where a
+    // dark cell borders a non-dark cell (so edges shared by two dark modules are
+    // never drawn → no internal seams/middle lines), then chain edges into closed
+    // loops. Touching modules become ONE continuous region — clean for extrusion.
+    const d = _qrOutlinePath(isDark, m.size, ox, oy, cell);
     qrLayer = `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="#ffffff"/>`
-            + `<path d="${d}" fill="${col}" shape-rendering="crispEdges"/>`;
+            + `<path d="${d}" fill="${col}" fill-rule="evenodd" shape-rendering="crispEdges"/>`;
     // Embed-area outline (matches the card: circle for service, rounded square for UPI).
     if (lr) {
       const sw = 2.5 * SC;
