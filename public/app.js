@@ -487,13 +487,38 @@ function _textToSvg(t, SC) {
        + `${_xmlEsc(t.str)}</text>`;
 }
 
+/* Fetch + cache a logo's original SVG text, with x/y/size injected for nesting. */
+const _svgFileCache = {};
+async function _fetchLogoSvg(name) {
+  if (name in _svgFileCache) return _svgFileCache[name];
+  try {
+    const res = await fetch(`/logos/${name}.svg`);
+    if (!res.ok) { _svgFileCache[name] = null; return null; }
+    const s = (await res.text()).replace(/<\?xml[^>]*\?>/i,'').replace(/<!DOCTYPE[^>]*>/i,'').trim();
+    _svgFileCache[name] = s; return s;
+  } catch (e) { _svgFileCache[name] = null; return null; }
+}
+function _placeSvg(svgText, x, y, w, h) {
+  return svgText.replace(/<svg\b([^>]*)>/i, (mm, attrs) => {
+    // Strip any existing width/height/x/y/preserveAspectRatio so we don't create
+    // duplicate attributes (which is an XML error); keep the viewBox.
+    const a = attrs
+      .replace(/\swidth="[^"]*"/i,'').replace(/\sheight="[^"]*"/i,'')
+      .replace(/\sx="[^"]*"/i,'').replace(/\sy="[^"]*"/i,'')
+      .replace(/\spreserveAspectRatio="[^"]*"/i,'');
+    return `<svg${a} x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" preserveAspectRatio="xMidYMid meet">`;
+  });
+}
+
 /* Full card as a scalable SVG at real print size (mm):
- *  • the rendered card embedded as the base raster (logos/badges/shapes), plus
- *  • a sharp VECTOR QR from the matrix, with the embedded centre logo restored
- *    on top (cropped from the card) so the white field doesn't hide it, plus
- *  • crisp VECTOR text redrawn from the recorded draws (layout.texts).
+ *  • base raster of the card (background, shapes, pill, footer), plus
+ *  • a sharp VECTOR QR (single continuous merged path — no internal seams), plus
+ *  • the embed-area OUTLINE (circle/square) in the brand colour, plus
+ *  • logos drawn from their ORIGINAL .svg files where available (vector), or a
+ *    raster crop for the centre logo when there's no SVG (e.g. uploaded PNG), plus
+ *  • crisp VECTOR text redrawn from the recorded draws.
  * Opens in Illustrator / Inkscape / browsers. */
-function downloadSVG() {
+async function downloadSVG() {
   if (!state.pngBase64) return;
   const lay = state.lastCard && state.lastCard.layout;
   const cv  = state.lastCard && state.lastCard.canvas;
@@ -502,33 +527,61 @@ function downloadSVG() {
   const longMM = (+val('r3dSize')) || 280;
   const longPx = Math.max(W, H);
   const wMM = (W / longPx) * longMM, hMM = (H / longPx) * longMM;
+  const pc = (lay && lay.paletteHints && lay.paletteHints[0]) || '#1a1a2e';
 
-  // ── Vector QR + restored embedded logo ──
-  let qrLayer = '';
+  // ── Vector QR (single continuous merged path) ──
+  let qrLayer = '', outline = '';
+  const lr = lay && lay.logoRect;
   if (lay && lay.qrRect && state.qrMatrix) {
     const m = state.qrMatrix, bytes = Uint8Array.from(atob(m.data), c => c.charCodeAt(0));
     const r = lay.qrRect, quiet = 1, cell = r.w / (m.size + quiet*2);
     const col = (lay.qrColor || '#1a1a2e');
-    const lr = lay.logoRect;
     const inLogo = (x,y) => lr && x>=lr.x && x<=lr.x+lr.w && y>=lr.y && y<=lr.y+lr.h;
-    let rects = '';
-    for (let row=0; row<m.size; row++) for (let c2=0; c2<m.size; c2++) {
-      if (bytes[row*m.size+c2]!==1) continue;
-      const x = r.x + (quiet+c2)*cell, y = r.y + (quiet+row)*cell;
-      if (inLogo(x+cell/2, y+cell/2)) continue;
-      rects += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cell.toFixed(2)}" height="${cell.toFixed(2)}"/>`;
+    const isDark = (row,c2) => bytes[row*m.size+c2] === 1 &&
+      !inLogo(r.x+(quiet+c2+0.5)*cell, r.y+(quiet+row+0.5)*cell);
+    let d = '';
+    for (let row=0; row<m.size; row++) {
+      let c2 = 0;
+      while (c2 < m.size) {
+        if (!isDark(row, c2)) { c2++; continue; }
+        let run = 1;
+        while (c2+run < m.size && isDark(row, c2+run)) run++;
+        const x = r.x + (quiet+c2)*cell, y = r.y + (quiet+row)*cell, ww = run*cell;
+        d += `M${x.toFixed(2)} ${y.toFixed(2)}h${ww.toFixed(2)}v${cell.toFixed(2)}h${(-ww).toFixed(2)}z`;
+        c2 += run;
+      }
     }
     qrLayer = `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="#ffffff"/>`
-            + `<g fill="${col}">${rects}</g>`;
-    // Restore the embedded centre logo (cropped from the card) ON TOP of the
-    // white field so the QR overlay doesn't hide it.
-    if (lr && cv) {
+            + `<path d="${d}" fill="${col}" shape-rendering="crispEdges"/>`;
+    // Embed-area outline (matches the card: circle for service, rounded square for UPI).
+    if (lr) {
+      const sw = 2.5 * SC;
+      outline = (lay.logoShape === 'circle')
+        ? `<circle cx="${(lr.x+lr.w/2).toFixed(1)}" cy="${(lr.y+lr.h/2).toFixed(1)}" r="${(lr.w/2).toFixed(1)}" fill="none" stroke="${pc}" stroke-width="${sw}"/>`
+        : `<rect x="${lr.x.toFixed(1)}" y="${lr.y.toFixed(1)}" width="${lr.w.toFixed(1)}" height="${lr.h.toFixed(1)}" rx="${(7*SC).toFixed(1)}" fill="none" stroke="${pc}" stroke-width="${sw}"/>`;
+    }
+  }
+
+  // ── Logo overlays: original SVG file where available, else raster crop ──
+  let logoLayer = '';
+  const imgs = (lay && Array.isArray(lay.images)) ? lay.images : [];
+  const inLogoRect = (im) => lr && (im.x*SC+im.w*SC/2)>=lr.x && (im.x*SC+im.w*SC/2)<=lr.x+lr.w
+                                && (im.y*SC+im.h*SC/2)>=lr.y && (im.y*SC+im.h*SC/2)<=lr.y+lr.h;
+  for (const im of imgs) {
+    const x=im.x*SC, y=im.y*SC, w=im.w*SC, h=im.h*SC;
+    const name = (im.src.match(/\/logos\/([\w-]+)\.[a-z0-9]+/i) || [])[1];
+    if (name) {
+      const svgText = await _fetchLogoSvg(name);
+      if (svgText) { logoLayer += _placeSvg(svgText, x, y, w, h); continue; }
+    }
+    // No SVG (uploaded raster / QR canvas / tinted icon). Only re-place the CENTRE
+    // logo (it's hidden by the QR white field); others are already in the base raster.
+    if (im.src.startsWith('data:') && inLogoRect(im) && cv) {
       try {
-        const lc = document.createElement('canvas'); lc.width = Math.round(lr.w); lc.height = Math.round(lr.h);
-        lc.getContext('2d').drawImage(cv, lr.x, lr.y, lr.w, lr.h, 0, 0, lc.width, lc.height);
-        qrLayer += `<image x="${lr.x}" y="${lr.y}" width="${lr.w}" height="${lr.h}" `
-                 + `xlink:href="${lc.toDataURL('image/png')}"/>`;
-      } catch (e) { /* logo crop tainted/failed → leave QR field */ }
+        const c2=document.createElement('canvas'); c2.width=Math.round(w); c2.height=Math.round(h);
+        c2.getContext('2d').drawImage(cv, x, y, w, h, 0, 0, c2.width, c2.height);
+        logoLayer += `<image x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" xlink:href="${c2.toDataURL('image/png')}"/>`;
+      } catch (e) { /* tainted → skip */ }
     }
   }
 
@@ -541,9 +594,9 @@ function downloadSVG() {
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ` +
     `width="${wMM.toFixed(2)}mm" height="${hMM.toFixed(2)}mm" viewBox="0 0 ${W} ${H}">\n` +
     `<image x="0" y="0" width="${W}" height="${H}" xlink:href="data:image/png;base64,${state.pngBase64}"/>\n` +
-    qrLayer + `\n` + textLayer + `\n</svg>\n`;
+    qrLayer + `\n` + logoLayer + `\n` + outline + `\n` + textLayer + `\n</svg>\n`;
   downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), safeName(getFormData()) + '_qr.svg');
-  showStatus('SVG saved (card @ ' + Math.round(longMM) + 'mm — vector QR, logo & text)', 'ok');
+  showStatus('SVG saved (card @ ' + Math.round(longMM) + 'mm — vector QR, logos, outline & text)', 'ok');
 }
 
 async function download3MF() {
@@ -758,6 +811,15 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
     _texts.push({ str, x, y, font: ctx.font, fill: ctx.fillStyle,
                   align: ctx.textAlign, baseline: ctx.textBaseline, alpha: ctx.globalAlpha });
     return _origFillText(str, x, y);
+  };
+  // Also record image draws (logos/badges/emblem) so the SVG export can swap in
+  // the original vector SVG files where available. Captures the 5-arg form
+  // drawImage(img, dx, dy, dw, dh); src identifies the logo (canvas/QR → '').
+  const _images = [];
+  const _origDrawImage = ctx.drawImage.bind(ctx);
+  ctx.drawImage = function(img, ...a) {
+    if (a.length === 4) _images.push({ src: (img && img.src) || '', x: a[0], y: a[1], w: a[2], h: a[3] });
+    return _origDrawImage(img, ...a);
   };
 
   function rr(x,y,w,h,r){
@@ -1159,7 +1221,7 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
     canvas: out,
     layout: { qrRect, logoRect, logoShape, qrColor: qrCol,
               paletteHints: [pc, bgColor, '#ffffff', qrCol],
-              texts: _texts, sc: SC, cardW: (W+M*2)*SC, cardH: (H+M*2)*SC },
+              texts: _texts, images: _images, sc: SC, cardW: (W+M*2)*SC, cardH: (H+M*2)*SC },
   };
 }
 
