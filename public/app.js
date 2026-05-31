@@ -1223,7 +1223,7 @@ function show3DTab() {
         size: state.qrMatrix.size,
         data: Uint8Array.from(atob(state.qrMatrix.data), c => c.charCodeAt(0)),
       };
-      state.group3d = window.QR3D.build(state.lastCard.canvas, state.lastCard.layout, matrix, {});
+      state.group3d = window.QR3D.build(state.lastCard.canvas, state.lastCard.layout, matrix, relief3dOpts());
     }
     window.QR3D.mountPreview(state.group3d, $('viewer3d'));
     $('btn3mf').disabled = false; $('btnStlNew').disabled = false;
@@ -1236,6 +1236,60 @@ function show3DTab() {
       msg.textContent = '3D build failed: ' + e.message;
     }
   }
+}
+
+/* Read the 3D Relief sliders into qr3d.build() options. */
+function relief3dOpts() {
+  const num = (id, d) => { const el = $(id); const v = el ? parseFloat(el.value) : NaN; return isNaN(v) ? d : v; };
+  const o = {
+    baseThickness: num('r3dThickness', 2),
+    layerHeight:   num('r3dRelief', 0.8),
+    colors:        Math.round(num('r3dColors', 4)),
+  };
+  const size = num('r3dSize', 0);
+  if (size > 0) o.longEdgeMM = size;   // 0 = auto (real card size)
+  return o;
+}
+
+/* Rebuild the cached 3D model from the current card + sliders and re-mount. */
+function rebuild3D() {
+  if (!window.QR3D || !state.lastCard || !state.qrMatrix) return;
+  const panel = $('tab-3d');
+  if (!panel || panel.classList.contains('hidden')) return; // only when 3D tab is visible
+  const matrix = {
+    size: state.qrMatrix.size,
+    data: Uint8Array.from(atob(state.qrMatrix.data), c => c.charCodeAt(0)),
+  };
+  try {
+    state.group3d = window.QR3D.build(state.lastCard.canvas, state.lastCard.layout, matrix, relief3dOpts());
+    window.QR3D.mountPreview(state.group3d, $('viewer3d'));
+    $('btn3mf').disabled = false; $('btnStlNew').disabled = false;
+  } catch (e) {
+    if (e.message !== 'NO_WEBGL') $('msg3d').textContent = '3D build failed: ' + e.message;
+  }
+}
+
+let _r3dTimer = null;
+function onRelief3dInput() {
+  // live value labels
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  set('r3dThicknessV', (+$('r3dThickness').value).toFixed(1));
+  set('r3dReliefV',    (+$('r3dRelief').value).toFixed(1));
+  set('r3dColorsV',    $('r3dColors').value);
+  const sz = +$('r3dSize').value;
+  set('r3dSizeV', sz > 0 ? sz + ' mm' : 'auto');
+  // invalidate cache + debounce a live rebuild
+  state.group3d = null;
+  clearTimeout(_r3dTimer);
+  _r3dTimer = setTimeout(rebuild3D, 140);
+}
+
+let _embedTimer = null;
+function onEmbedSizeInput() {
+  $('r3dEmbedV').textContent = $('r3dEmbed').value;
+  // embed size lives in the card render → regenerate the card (debounced)
+  clearTimeout(_embedTimer);
+  _embedTimer = setTimeout(() => generate(), 300);
 }
 
 function showStatus(msg, type) {

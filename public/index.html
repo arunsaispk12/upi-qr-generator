@@ -202,7 +202,33 @@
       </div>
     </div>
 
-    <div class="section-title">3D Plate Dimensions (mm)</div>
+    <div class="section-title">3D Relief Settings</div>
+    <div class="muted-note" style="margin:-4px 0 8px;">Live-adjusts the 3D Model preview &amp; the 3MF/STL export.</div>
+    <div class="field">
+      <label>Plaque thickness <span id="r3dThicknessV">2.0</span> mm</label>
+      <input type="range" id="r3dThickness" min="1" max="6" step="0.5" value="2" oninput="onRelief3dInput()" />
+    </div>
+    <div class="field">
+      <label>Relief / QR raise <span id="r3dReliefV">0.8</span> mm</label>
+      <input type="range" id="r3dRelief" min="0.4" max="2.5" step="0.1" value="0.8" oninput="onRelief3dInput()" />
+    </div>
+    <div class="field">
+      <label>Plaque size (long edge) <span id="r3dSizeV">auto</span></label>
+      <input type="range" id="r3dSize" min="100" max="300" step="5" value="0" oninput="onRelief3dInput()" />
+      <span class="muted-note">0 = auto (real card size). Move to override in mm.</span>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Colours <span id="r3dColorsV">4</span></label>
+        <input type="range" id="r3dColors" min="2" max="6" step="1" value="4" oninput="onRelief3dInput()" />
+      </div>
+      <div class="field">
+        <label>Logo area <span id="r3dEmbedV">22</span>%</label>
+        <input type="range" id="r3dEmbed" min="12" max="34" step="1" value="22" oninput="onEmbedSizeInput()" />
+      </div>
+    </div>
+
+    <div class="section-title">OpenSCAD Export (legacy .scad)</div>
     <div class="row3">
       <div class="field"><label>Width</label><input type="number" id="baseLength" value="90" min="30" max="300" /></div>
       <div class="field"><label>Height</label><input type="number" id="baseWidth" value="90" min="30" max="300" /></div>
