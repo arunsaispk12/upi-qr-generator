@@ -442,6 +442,7 @@ function enableButtons() {
   $('btnScad').disabled = false;
   $('btnPng').disabled  = false;
   if ($('btnSvg')) $('btnSvg').disabled = false;
+  if ($('btnBw'))  $('btnBw').disabled  = false;
 }
 
 /* ── Downloads ──────────────────────────────────────────────────── */
@@ -465,6 +466,32 @@ function downloadPNG() {
   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
   downloadBlob(new Blob([arr], { type: 'image/png' }), safeName(getFormData()) + '_qr.png');
   showStatus('PNG saved!', 'ok');
+}
+
+/* Pure black-&-white PNG of the whole card: every pixel thresholded to #000 or
+ * #fff by luminance — no colour, no greys. For single-colour print / engraving
+ * / stencil / fax. The QR field stays white with black modules either way, so
+ * it remains scannable. */
+function downloadBW() {
+  const cv = state.lastCard && state.lastCard.canvas;
+  if (!cv) { if (!state.pngBase64) return; }
+  const src = cv;
+  if (!src) return;
+  const out = document.createElement('canvas'); out.width = src.width; out.height = src.height;
+  const x = out.getContext('2d');
+  x.drawImage(src, 0, 0);
+  const img = x.getImageData(0, 0, out.width, out.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const lum = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+    const v = (lum < 128) ? 0 : 255;   // hard threshold → pure B/W
+    d[i] = d[i+1] = d[i+2] = v; d[i+3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  out.toBlob(b => {
+    downloadBlob(b, safeName(getFormData()) + '_qr_bw.png');
+    showStatus('Black & white PNG saved', 'ok');
+  }, 'image/png');
 }
 
 function _xmlEsc(s) {
