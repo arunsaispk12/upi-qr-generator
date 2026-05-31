@@ -73,8 +73,9 @@ let state = {
   scadContent:       null,
   isZip:             false,
   filename:          'qr',
-  logoDataUrl:       null,
+  logoDataUrl:       null,   // card logo image (PNG/JPG) — used for the 2D card
   logoType:          null,
+  svgLogoUrl:        null,   // 3D-only vector logo (SVG) for the relief QR centre
   lastCard:          null,   // { canvas, layout } from the most recent successful build
   qrMatrix:          null,   // { size, data } base64 from the server, or null offline
   group3d:           null,   // THREE.Group cached from the last 3D build
@@ -82,19 +83,22 @@ let state = {
 
 /* ── Payment badge image loader (cached) ────────────────────────── */
 const _badgeCache = {};
-const BADGE_EXT = { gpay: 'png', phonepe: 'webp', paytm: 'png' };
+// Logos present as raster images in /logos. Only these are fetched; anything
+// else resolves null (→ canvas-drawn fallback for payment badges, empty centre
+// for service cards) so there are no 404s for logos that aren't supplied yet.
+const BADGE_EXT = { gpay: 'png', phonepe: 'png', paytm: 'png' };
 function loadBadge(name) {
+  if (!(name in BADGE_EXT)) return Promise.resolve(null);
   if (_badgeCache[name]) return Promise.resolve(_badgeCache[name]);
   return new Promise(resolve => {
     const img = new Image();
     img.onload  = () => { _badgeCache[name] = img; resolve(img); };
     img.onerror = () => resolve(null);   // null → fall back to canvas drawing
-    const ext = BADGE_EXT[name] || 'svg';
-    img.src = `/logos/${name}.${ext}?v=3`;
+    img.src = `/logos/${name}.${BADGE_EXT[name]}?v=4`;
   });
 }
 // Kick off preload so they're ready by the time user clicks Generate
-['gpay','phonepe','paytm','whatsapp','instagram','google','url','wifi'].forEach(loadBadge);
+['gpay','phonepe','paytm'].forEach(loadBadge);
 
 /* ── DOM helpers ────────────────────────────────────────────────── */
 const $   = id => document.getElementById(id);
@@ -154,14 +158,10 @@ function handleLogoUpload(input) {
   const reader = new FileReader();
   reader.onload = e => {
     state.logoDataUrl = e.target.result;
-    state.logoType    = file.type === 'image/svg+xml' ? 'svg' : 'png';
+    state.logoType    = 'png';
     $('logoPreview').src              = e.target.result;
     $('logoPreviewWrap').style.display = '';
     $('logoClear').style.display      = 'inline-flex';
-    $('svgNote').style.display        = state.logoType === 'svg' ? 'inline' : 'none';
-    if (state.logoType === 'svg') {
-      $('scadDesc').textContent = 'SVG logo: download is a .zip (plate.scad + logo.svg). Extract both before opening in OpenSCAD.';
-    }
   };
   reader.readAsDataURL(file);
 }
@@ -172,8 +172,31 @@ function clearLogo() {
   $('logoFile').value               = '';
   $('logoPreviewWrap').style.display = 'none';
   $('logoClear').style.display       = 'none';
-  $('svgNote').style.display         = 'none';
-  $('scadDesc').textContent          = 'Parametric 3D model - render in OpenSCAD - export STL - print.';
+}
+
+/* SVG logo — for the 3D relief QR-centre only (kept separate from the card image). */
+function handleSvgLogoUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { showStatus('SVG must be under 2 MB', 'err'); input.value=''; return; }
+  if (!/svg/.test(file.type) && !/\.svg$/i.test(file.name)) { showStatus('Please choose an .svg file', 'err'); input.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    state.svgLogoUrl = e.target.result;
+    $('svgLogoPreview').src              = e.target.result;
+    $('svgLogoPreviewWrap').style.display = '';
+    $('svgLogoClear').style.display      = 'inline-flex';
+    state.group3d = null; // force the 3D model to rebuild with the new logo
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearSvgLogo() {
+  state.svgLogoUrl = null;
+  $('svgLogoFile').value                = '';
+  $('svgLogoPreviewWrap').style.display = 'none';
+  $('svgLogoClear').style.display       = 'none';
+  state.group3d = null;
 }
 
 /* ── Collect form data ──────────────────────────────────────────── */
@@ -200,6 +223,10 @@ function getFormData() {
     bgColor:      val('bgColor') || '#ffffff',
     logoDataUrl:  state.logoDataUrl,
     logoType:     state.logoType,
+    embedLogo:    $('embedLogo') ? $('embedLogo').checked : true,
+    embedShape:   val('embedShape') || 'circle',
+    vCenter:      $('vCenter') ? $('vCenter').checked : false,
+    embedScale:   (+val('r3dEmbed') || 22) / 100,
     baseLength:     +val('baseLength')     || 90,
     baseWidth:      +val('baseWidth')      || 90,
     baseThickness:  +val('baseThickness')  || 2,
@@ -315,14 +342,12 @@ async function buildFinalCard(qrElement, data) {
       img.src = data.logoDataUrl;
     });
   }
-  let result;
-  if (data.mode === 'upi') {
-    result = await buildUpiCard(qrElement, userLogoImg, data);
-  } else {
-    const typeDef    = QR_TYPES[data.mode];
-    const svcLogoImg = typeDef && typeDef.logoName ? await loadBadge(typeDef.logoName) : null;
-    result = await buildServiceCard(qrElement, userLogoImg, svcLogoImg, data);
-  }
+  // ONE universal layout for every QR type (the locked "bhuvis" format).
+  // Service types pass their brand badge as the QR-centre fallback logo.
+  const typeDef    = QR_TYPES[data.mode];
+  const svcLogoImg = (data.mode !== 'upi' && typeDef && typeDef.logoName)
+    ? await loadBadge(typeDef.logoName) : null;
+  const result = await buildUpiCard(qrElement, userLogoImg, data, svcLogoImg);
   state.lastCard = { canvas: result.canvas, layout: result.layout };
   return result;
 }
@@ -570,19 +595,31 @@ function timeAgo(ts) {
   return Math.floor(s / 86400) + 'd ago';
 }
 
-/* ── UPI professional print card (5"×7" @100px/inch, ECC-H) ─────── */
-/*
- * W=500 (5"), H=700 with logo (7") / H=630 no logo (6.3")
- * QS=380 = 3.8" QR → 15mm quiet zone: (500-380)/2 = 60px = 15.2mm
- * Logo overlay: 22% of QS = 84px, circular clip
- * Layout: ~20% branding | ~57% QR | ~12% info | ~7% footer (46px)
+/* ── Per-mode content for the ONE universal "bhuvis" card layout ──── */
+const CARD_CFG = {
+  upi:           { action:'SCAN & PAY',     via:'VIA UPI',       badges:true,  pill:d=>d.upiId||'' },
+  url:           { action:'SCAN TO VISIT',  via:'WEBSITE',       badges:false, pill:d=>{try{return new URL(d.url).hostname;}catch{return (d.url||'').slice(0,40);}} },
+  whatsapp:      { action:'SCAN TO CHAT',   via:'VIA WHATSAPP',  badges:false, pill:d=>'+'+(d.waPhone||'').replace(/\D/g,'') },
+  instagram:     { action:'SCAN TO FOLLOW', via:'ON INSTAGRAM',  badges:false, pill:d=>'@'+(d.igUsername||'').replace(/^@/,'').trim() },
+  google_review: { action:'LEAVE A REVIEW', via:'ON GOOGLE',     badges:false, pill:()=>'★  Google Review' },
+  wifi:          { action:'SCAN TO CONNECT',via:'WI-FI NETWORK', badges:false, pill:d=>d.wifiSsid||'Network' },
+};
+
+/* ── ONE universal branded print card (5"×11" @100px/inch, ECC-H) ──
+ * The single locked "bhuvis" format used for EVERY QR type. Type-specific
+ * content (action text, via text, info pill, payment badges) comes from
+ * CARD_CFG; everything else is identical across types. `logoImg` is the top
+ * emblem + QR-centre logo; `svcLogoImg` is a brand-badge fallback for the
+ * QR centre on service types.
  */
-async function buildUpiCard(qrEl, logoImg, data) {
-  const pc        = /^#[0-9a-fA-F]{6}$/.test(data.primaryColor||'') ? data.primaryColor : '#0d2e8a';
+async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
+  const typeDef   = QR_TYPES[data.mode] || {};
+  const cfg       = CARD_CFG[data.mode] || CARD_CFG.url;
+  const pc        = /^#[0-9a-fA-F]{6}$/.test(data.primaryColor||'') ? data.primaryColor : (typeDef.defaultColor || '#0d2e8a');
   const bgColor   = /^#[0-9a-fA-F]{6}$/.test(data.bgColor||'')      ? data.bgColor      : '#ffffff';
-  const brandName = data.brandName || data.payeeName || 'Brand';
+  const brandName = data.brandName || data.payeeName || (typeDef.getLabel ? typeDef.getLabel(data) : '') || 'Brand';
   const tagline   = (data.tagline  || '').trim();
-  const upiId     = data.upiId || '';
+  const centreImg = logoImg || svcLogoImg || null;   // QR-centre logo (badge fallback)
 
   // Derive readable colours for text/lines on top of bgColor
   function luma(hex) {
@@ -720,26 +757,67 @@ async function buildUpiCard(qrEl, logoImg, data) {
   ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
   ctx.save(); rr(M,M,W,H,20); ctx.clip();
 
-  // Vertically balance content when there's no dominant top logo, so the
-  // unified 5×11 card isn't top-heavy (footer stays bottom-anchored).
-  let y = M+22 + (logoImg ? 0 : 150);
+  /* ── LOCKED SECTION BANDS ─────────────────────────────────────────
+   * The QR box and everything below it sit at FIXED positions so the layout
+   * never shifts with brand-name length or logo presence. The header
+   * (emblem + brand + tagline + action) lays out in the fixed band ABOVE the QR.
+   *   HEADER band : M+22 .. qbY-6
+   *   QR box      : fixed at qbY (locked size & position)
+   *   PILL        : fixed, qbY+qbSz+14
+   *   BADGES      : fixed, below the pill (UPI only)
+   *   FOOTER      : fixed, bottom 56px
+   */
+  const QS=410, qbPad=10, qbSz=QS+qbPad*2;     // QR box — LOCKED size (matches reference)
+  const qbX=M+(W-qbSz)/2, qbY=M+398;            // QR box — LOCKED position (top ≈ reference)
+  const HEADER_TOP=M+22, HEADER_BOT=qbY-6;
 
-  // ── LOGO — dominant 3.5" (350px) block ───────────────────────────
+  // Pre-measure brand name (1 or 2 lines) to size the header band.
+  function computeBrand() {
+    const BN=brandName.toUpperCase(), maxW=W-32;
+    let fs=32; ctx.font=`900 ${fs}px sans-serif`;
+    while(ctx.measureText(BN).width>maxW && fs>20){ fs--; ctx.font=`900 ${fs}px sans-serif`; }
+    if (ctx.measureText(BN).width<=maxW) return { fs, lines:[BN] };
+    const words=BN.split(/\s+/);
+    let best=Math.max(1,Math.round(words.length/2)), bestDiff=Infinity;
+    for (let i=1;i<words.length;i++){ const d=Math.abs(words.slice(0,i).join(' ').length-words.slice(i).join(' ').length); if(d<bestDiff){bestDiff=d;best=i;} }
+    let l1=words.slice(0,best).join(' '), l2=words.slice(best).join(' ');
+    while((ctx.measureText(l1).width>maxW||ctx.measureText(l2).width>maxW)&&fs>14){ fs--; ctx.font=`900 ${fs}px sans-serif`; }
+    return { fs, lines:[l1,l2] };
+  }
+  const brand=computeBrand();
+
+  // Emblem dimensions (scaled), if a top logo is present.
+  let emblemDims=null;
   if (logoImg) {
-    const maxH=350, maxW=W*0.82;   // 350px = 3.5" at 100px/in
+    const maxH=235, maxW=W*0.82;   // fits the header band above the larger locked QR
     const sc=Math.min(maxH/logoImg.naturalHeight, maxW/logoImg.naturalWidth);
-    const lw=Math.round(logoImg.naturalWidth*sc), lh=Math.round(logoImg.naturalHeight*sc);
-    ctx.drawImage(logoImg, cx-lw/2, y, lw, lh);
-    y += lh+18;
+    emblemDims={ w:Math.round(logoImg.naturalWidth*sc), h:Math.round(logoImg.naturalHeight*sc) };
+  }
+  // Header block advances (must match the draw steps below).
+  const emblemAdv = emblemDims ? emblemDims.h+18 : 0;
+  const brandAdv  = brand.lines.length===1 ? brand.fs+8 : brand.lines.length*(brand.fs+4)+4;
+  const headerAdv = emblemAdv + brandAdv + 20/*tagline*/ + 34/*action*/ + 16/*via*/;
+  const bandH = HEADER_BOT - HEADER_TOP;
+  // Placement within the band: vertical-centre (toggle) or bottom-anchor to QR.
+  let y = data.vCenter
+    ? HEADER_TOP + Math.max(0, (bandH - headerAdv)/2)
+    : Math.max(HEADER_TOP, HEADER_BOT - headerAdv);
+
+  // ── EMBLEM (top logo) ─────────────────────────────────────────────
+  if (emblemDims) {
+    ctx.drawImage(logoImg, cx-emblemDims.w/2, y, emblemDims.w, emblemDims.h);
+    y += emblemDims.h+18;
   }
 
-  // ── BRAND NAME ───────────────────────────────────────────────────
+  // ── BRAND NAME (1 or 2 lines, pre-measured) ───────────────────────
   ctx.fillStyle=textCol; ctx.textAlign='center'; ctx.textBaseline='top';
-  let fs = 32;
-  ctx.font=`900 ${fs}px sans-serif`;
-  while(ctx.measureText(brandName.toUpperCase()).width>W-32&&fs>12){fs--;ctx.font=`900 ${fs}px sans-serif`;}
-  ctx.fillText(brandName.toUpperCase(), cx, y);
-  y += fs+8;
+  ctx.font=`900 ${brand.fs}px sans-serif`;
+  if (brand.lines.length===1) {
+    ctx.fillText(brand.lines[0], cx, y); y += brand.fs+8;
+  } else {
+    brand.lines.forEach(ln => { ctx.fillText(ln, cx, y); y += brand.fs+4; });
+    y += 4;
+  }
 
   // ── TAGLINE with flanking lines, or thin divider ──────────────────
   if (tagline) {
@@ -760,10 +838,10 @@ async function buildUpiCard(qrEl, logoImg, data) {
   }
   y += 20;
 
-  // ── SCAN & PAY with flanking lines ───────────────────────────────
+  // ── ACTION (SCAN …) with flanking lines ───────────────────────────
   y += 12;
   ctx.font='bold 16px sans-serif'; ctx.fillStyle=textCol; ctx.textBaseline='top';
-  const spTxt='SCAN & PAY', spW=ctx.measureText(spTxt).width;
+  const spTxt=cfg.action, spW=ctx.measureText(spTxt).width;
   const dl=Math.max(0,(W-spW-48)/2-6);
   ctx.strokeStyle=textCol; ctx.lineWidth=1.5;
   ctx.beginPath(); ctx.moveTo(M+16,y+10); ctx.lineTo(M+16+dl,y+10); ctx.stroke();
@@ -771,19 +849,13 @@ async function buildUpiCard(qrEl, logoImg, data) {
   ctx.fillText(spTxt, cx, y);
   y += 22;
 
-  // ── VIA UPI ───────────────────────────────────────────────────────
+  // ── VIA … ─────────────────────────────────────────────────────────
   ctx.font='12px sans-serif'; ctx.fillStyle=muteCol; ctx.globalAlpha=1;
-  ctx.fillText('VIA UPI', cx, y);
-  y += 16;
+  ctx.fillText(cfg.via, cx, y);
 
-  // ── QR BOX — bigger when there's no top logo, to fill the 5×11 card.
-  // 460 keeps qbSz=480 inside W=500 so the box border isn't clipped at the edges.
-  const QS=logoImg?380:460, qbPad=10, qbSz=QS+qbPad*2;
-  const qbX=M+(W-qbSz)/2, qbY=y+8;
-  ctx.strokeStyle=pc; ctx.lineWidth=3;
-  rr(qbX,qbY,qbSz,qbSz,14); ctx.stroke();
-  // QR always on white for scannability
-  ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
+  // ── QR BOX — drawn at the LOCKED qbY (header above adapts to it) ───
+  // Clean white rounded field (quiet zone) — no coloured frame, matches reference.
+  ctx.fillStyle='#ffffff'; rr(qbX,qbY,qbSz,qbSz,14); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
 
   // Device-pixel rect of the QR field (canvas is scaled by SC), for the 3D relief.
@@ -792,30 +864,48 @@ async function buildUpiCard(qrEl, logoImg, data) {
     w: QS * SC, h: QS * SC,
   };
 
-  // Logo overlay — 22% of QS, square with rounded corners
+  // Embedded centre logo (toggle + shape). Reserve a backing in the QR centre
+  // and draw the logo if uploaded; if not, leave it blank. Shape = circle|square.
   let logoRect = null;
-  if (logoImg) {
-    const os=Math.round(QS*0.22);
+  const logoShape = (data.embedShape === 'square') ? 'rect' : 'circle';
+  if (data.embedLogo !== false) {
+    const os=Math.round(QS*(data.embedScale||0.22));
     const ox=qbX+qbPad+(QS-os)/2, oy=qbY+qbPad+(QS-os)/2;
-    ctx.fillStyle='#ffffff'; rr(ox-5,oy-5,os+10,os+10,7); ctx.fill();
-    ctx.save(); rr(ox,oy,os,os,5); ctx.clip();
-    ctx.drawImage(logoImg,ox,oy,os,os); ctx.restore();
-    // Device-pixel rect of the logo backing, for the 3D embedded-logo relief.
+    const backing = () => { // backing/outline path (shape-aware)
+      if (logoShape === 'circle') { ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, (os+10)/2, 0, Math.PI*2); }
+      else rr(ox-5, oy-5, os+10, os+10, 7);
+    };
+    // Dark backing on dark cards (emblem on black, like the reference); the
+    // outline still delineates it. On light cards this stays light.
+    ctx.fillStyle=bgColor; backing(); ctx.fill();
+    if (centreImg) {
+      ctx.save();
+      if (logoShape === 'circle') { ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip(); }
+      else { rr(ox, oy, os, os, 5); ctx.clip(); }
+      ctx.drawImage(centreImg, ox, oy, os, os); ctx.restore();
+    }
+    // Outline around the embed area (delineates the logo zone, esp. when empty).
+    ctx.strokeStyle=pc; ctx.lineWidth=2.5; backing(); ctx.stroke();
+    // Device-pixel rect of the reserved logo area, for the 3D embedded-logo relief.
     logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
   }
   y = qbY+qbSz+14;
 
-  // ── UPI ID PILL ───────────────────────────────────────────────────
+  // ── INFO PILL (UPI id / phone / @user / hostname / SSID) ──────────
   const pillH=36, pillW=W-60;
   ctx.fillStyle=pc; rr(M+30,y,pillW,pillH,pillH/2); ctx.fill();
-  ctx.fillStyle='#ffffff'; ctx.font='900 20px monospace'; ctx.textBaseline='middle';
-  let uid=upiId;
+  // Dark text on a light/gold pill, white on a dark pill (matches reference).
+  ctx.fillStyle = luma(pc) > 150 ? '#1a1a1a' : '#ffffff';
+  ctx.font='900 20px monospace'; ctx.textBaseline='middle';
+  const pillFull = (cfg.pill(data) || '').toString();
+  let uid=pillFull;
   while(ctx.measureText(uid).width>pillW-28&&uid.length>6) uid=uid.slice(0,-1);
-  if(uid!==upiId) uid+='…';
+  if(uid!==pillFull) uid+='…';
   ctx.fillText(uid, cx, y+pillH/2);
   y += pillH+10;
 
-  // ── ALL UPI APPS ACCEPTED ─────────────────────────────────────────
+  // ── Payment apps (UPI only) ───────────────────────────────────────
+  if (cfg.badges) {
   ctx.fillStyle=muteCol; ctx.font='bold 10px sans-serif'; ctx.textBaseline='top';
   ctx.fillText('ALL UPI APPS ACCEPTED', cx, y);
   y += 16;
@@ -869,6 +959,7 @@ async function buildUpiCard(qrEl, logoImg, data) {
     });
     y += bh;
   }
+  } // end cfg.badges (UPI only)
 
   // ── FOOTER ────────────────────────────────────────────────────────
   const footH=56, footY=M+H-footH;
@@ -894,10 +985,12 @@ async function buildUpiCard(qrEl, logoImg, data) {
     const itemWidths=items.map(it=>icSz+4+ctx.measureText(it.label).width);
     const totalTW=itemWidths.reduce((s,w)=>s+w,0)+sepW*(items.length-1);
     let tx=cx-totalTW/2;
-    ctx.fillStyle='#ffffff'; ctx.textBaseline='middle';
+    // Dark trust text/icons on a light/gold footer, white on a dark footer.
+    const footCol = luma(pc) > 150 ? '#1a1a1a' : '#ffffff';
+    ctx.fillStyle=footCol; ctx.textBaseline='middle';
     items.forEach((it,i)=>{
-      it.draw(tx,icY,icSz,'#ffffff');
-      ctx.font=trustFont; ctx.fillStyle='#ffffff';
+      it.draw(tx,icY,icSz,footCol);
+      ctx.font=trustFont; ctx.fillStyle=footCol;
       ctx.textAlign='left';
       ctx.fillText(it.label, tx+icSz+4, fcy);
       tx+=itemWidths[i];
@@ -913,184 +1006,7 @@ async function buildUpiCard(qrEl, logoImg, data) {
   return {
     dataUrl: out.toDataURL('image/png'),
     canvas: out,
-    layout: { qrRect, logoRect, logoShape: 'rect', qrColor: qrCol,
-              paletteHints: [pc, bgColor, '#ffffff', qrCol] },
-  };
-}
-
-/* ── Per-mode config for service cards ──────────────────────────── */
-const SERVICE_CFG = {
-  url: {
-    actionText: 'SCAN TO VISIT',
-    viaText:    'WEBSITE',
-    infoText: d => { try { return new URL(d.url).hostname; } catch { return (d.url||'').slice(0,40); } },
-  },
-  whatsapp: {
-    actionText: 'SCAN TO CHAT',
-    viaText:    'VIA WHATSAPP',
-    infoText: d => '+' + (d.waPhone||'').replace(/\D/g,''),
-  },
-  instagram: {
-    actionText: 'SCAN TO FOLLOW',
-    viaText:    'ON INSTAGRAM',
-    infoText: d => '@' + (d.igUsername||'').replace(/^@/,'').trim(),
-  },
-  google_review: {
-    actionText: 'LEAVE A REVIEW',
-    viaText:    'ON GOOGLE',
-    infoText: () => '★  Google Review',
-  },
-  wifi: {
-    actionText: 'SCAN TO CONNECT',
-    viaText:    'WI-FI NETWORK',
-    infoText: d => d.wifiSsid || 'Network',
-  },
-};
-
-/* ── Professional service card (WhatsApp, Instagram, Google, URL, WiFi) */
-async function buildServiceCard(qrEl, userLogoImg, svcLogoImg, data) {
-  const typeDef  = QR_TYPES[data.mode] || {};
-  const cfg      = SERVICE_CFG[data.mode] || {};
-  const pc       = /^#[0-9a-fA-F]{6}$/.test(data.primaryColor||'') ? data.primaryColor : (typeDef.defaultColor || '#1a73e8');
-  const bgColor  = /^#[0-9a-fA-F]{6}$/.test(data.bgColor||'')      ? data.bgColor      : '#ffffff';
-  const brandName = data.brandName || (typeDef.getLabel && typeDef.getLabel(data)) || data.mode;
-  const tagline  = (data.tagline || '').trim();
-
-  function luma(hex) {
-    const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
-    return 0.299*r + 0.587*g + 0.114*b;
-  }
-  const bgDark   = luma(bgColor) < 160;
-  const textCol  = bgDark ? '#ffffff' : pc;
-  const muteCol  = bgDark ? 'rgba(255,255,255,0.55)' : pc;
-  const divAlpha = bgDark ? 0.25 : 0.13;
-
-  const W=500, M=12, SC=2;
-  const QS = userLogoImg ? 380 : 460;   // bigger QR when no top logo, to fill 5×11 (qbSz=480 < W)
-  const H = 1100;   // unified 5×11 for ALL QR types
-  const out = document.createElement('canvas');
-  out.width=(W+M*2)*SC; out.height=(H+M*2)*SC;
-  const ctx=out.getContext('2d');
-  ctx.scale(SC,SC);
-  const cx=M+W/2;
-
-  function rr(x,y,w,h,r){
-    ctx.beginPath();
-    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
-    ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
-    ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
-    ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
-    ctx.closePath();
-  }
-
-  // Card shadow + background
-  ctx.shadowColor='rgba(0,0,0,0.22)'; ctx.shadowBlur=28; ctx.shadowOffsetY=8;
-  ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
-  ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
-  ctx.fillStyle=bgColor; rr(M,M,W,H,20); ctx.fill();
-  ctx.save(); rr(M,M,W,H,20); ctx.clip();
-
-  // Vertically balance content when there's no dominant top logo (service
-  // cards have no bottom footer), so the unified 5×11 card isn't top-heavy.
-  let y = M+22 + (userLogoImg ? 0 : 200);
-
-  // ── USER LOGO (if uploaded) — dominant block, same as UPI card ────
-  if (userLogoImg) {
-    const maxH=350, maxW=W*0.82;
-    const sc=Math.min(maxH/userLogoImg.naturalHeight, maxW/userLogoImg.naturalWidth);
-    const lw=Math.round(userLogoImg.naturalWidth*sc), lh=Math.round(userLogoImg.naturalHeight*sc);
-    ctx.drawImage(userLogoImg, cx-lw/2, y, lw, lh);
-    y += lh+18;
-  }
-
-  // ── BRAND NAME ────────────────────────────────────────────────────
-  ctx.fillStyle=textCol; ctx.textAlign='center'; ctx.textBaseline='top';
-  let fs=32;
-  ctx.font=`900 ${fs}px sans-serif`;
-  while(ctx.measureText(brandName.toUpperCase()).width>W-32&&fs>12){fs--;ctx.font=`900 ${fs}px sans-serif`;}
-  ctx.fillText(brandName.toUpperCase(), cx, y);
-  y += fs+8;
-
-  // ── TAGLINE or thin divider ───────────────────────────────────────
-  if (tagline) {
-    const tl=tagline.toUpperCase();
-    ctx.font='12px sans-serif';
-    const tW=ctx.measureText(tl).width;
-    const ll=Math.max(0,(W-tW-48)/2-6);
-    ctx.globalAlpha=divAlpha*2; ctx.strokeStyle=textCol; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(M+16,y+8); ctx.lineTo(M+16+ll,y+8); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx+tW/2+6,y+8); ctx.lineTo(cx+tW/2+6+ll,y+8); ctx.stroke();
-    ctx.globalAlpha=0.7; ctx.fillStyle=textCol; ctx.fillText(tl, cx, y+1); ctx.globalAlpha=1;
-  } else {
-    ctx.strokeStyle=textCol; ctx.lineWidth=1; ctx.globalAlpha=divAlpha;
-    ctx.beginPath(); ctx.moveTo(M+16,y+8); ctx.lineTo(M+W-16,y+8); ctx.stroke();
-    ctx.globalAlpha=1;
-  }
-  y += 20;
-
-  // ── ACTION HEADER with flanking lines ────────────────────────────
-  y += 12;
-  const spTxt = cfg.actionText || 'SCAN QR CODE';
-  ctx.font='bold 16px sans-serif'; ctx.fillStyle=textCol; ctx.textBaseline='top';
-  const spW=ctx.measureText(spTxt).width;
-  const dl=Math.max(0,(W-spW-48)/2-6);
-  ctx.strokeStyle=textCol; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.moveTo(M+16,y+10); ctx.lineTo(M+16+dl,y+10); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(cx+spW/2+6,y+10); ctx.lineTo(cx+spW/2+6+dl,y+10); ctx.stroke();
-  ctx.fillText(spTxt, cx, y);
-  y += 22;
-
-  // ── VIA SERVICE ───────────────────────────────────────────────────
-  ctx.font='12px sans-serif'; ctx.fillStyle=muteCol;
-  ctx.fillText(cfg.viaText || '', cx, y);
-  y += 16;
-
-  // ── QR BOX ────────────────────────────────────────────────────────
-  const qbPad=10, qbSz=QS+qbPad*2;
-  const qbX=M+(W-qbSz)/2, qbY=y+8;
-  ctx.strokeStyle=pc; ctx.lineWidth=3;
-  rr(qbX,qbY,qbSz,qbSz,14); ctx.stroke();
-  ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
-  ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
-
-  // Device-pixel rect of the QR field (canvas is scaled by SC), for the 3D relief.
-  const qrRect = {
-    x: (qbX + qbPad) * SC, y: (qbY + qbPad) * SC,
-    w: QS * SC, h: QS * SC,
-  };
-
-  // ── SERVICE LOGO in QR centre (circular clip) ─────────────────────
-  const overlayImg = userLogoImg || svcLogoImg;
-  let logoRect = null;
-  if (overlayImg) {
-    const os = Math.round(QS * 0.22);
-    const ox = qbX+qbPad+(QS-os)/2, oy = qbY+qbPad+(QS-os)/2;
-    ctx.fillStyle='#ffffff'; rr(ox-5,oy-5,os+10,os+10,os/2+5); ctx.fill();
-    ctx.save();
-    ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip();
-    ctx.drawImage(overlayImg, ox, oy, os, os);
-    ctx.restore();
-    // Device-pixel rect of the logo backing, for the 3D embedded-logo relief.
-    logoRect = { x: (ox-5)*SC, y: (oy-5)*SC, w: (os+10)*SC, h: (os+10)*SC };
-  }
-  y = qbY+qbSz+14;
-
-  // ── INFO PILL ─────────────────────────────────────────────────────
-  const infoText = cfg.infoText ? cfg.infoText(data) : (brandName || data.mode);
-  const pillH=36, pillW=W-60;
-  ctx.fillStyle=pc; rr(M+30,y,pillW,pillH,pillH/2); ctx.fill();
-  ctx.fillStyle='#ffffff'; ctx.font='900 18px monospace'; ctx.textBaseline='middle'; ctx.textAlign='center';
-  let piT=infoText;
-  while(ctx.measureText(piT).width>pillW-32&&piT.length>4) piT=piT.slice(0,-1);
-  if(piT!==infoText) piT+='…';
-  ctx.fillText(piT, cx, y+pillH/2);
-
-  ctx.restore();
-  const qrCol = /^#[0-9a-fA-F]{6}$/.test(data.qrColor||'') ? data.qrColor : '#1a1a2e';
-  return {
-    dataUrl: out.toDataURL('image/png'),
-    canvas: out,
-    layout: { qrRect, logoRect, logoShape: 'circle', qrColor: qrCol,
+    layout: { qrRect, logoRect, logoShape, qrColor: qrCol,
               paletteHints: [pc, bgColor, '#ffffff', qrCol] },
   };
 }
@@ -1198,7 +1114,7 @@ function switchTab(name, el) {
   else if (window.QR3D) window.QR3D.disposePreview();
 }
 
-function show3DTab() {
+async function show3DTab() {
   const msg = $('msg3d');
   if (!window.QR3D) { msg.textContent = '3D module still loading — try again in a moment.'; return; }
   if (!state.lastCard || !state.qrMatrix) {
@@ -1213,7 +1129,7 @@ function show3DTab() {
         size: state.qrMatrix.size,
         data: Uint8Array.from(atob(state.qrMatrix.data), c => c.charCodeAt(0)),
       };
-      state.group3d = window.QR3D.build(state.lastCard.canvas, state.lastCard.layout, matrix, {});
+      state.group3d = window.QR3D.build(state.lastCard.canvas, state.lastCard.layout, matrix, await relief3dOpts());
     }
     window.QR3D.mountPreview(state.group3d, $('viewer3d'));
     $('btn3mf').disabled = false; $('btnStlNew').disabled = false;
@@ -1226,6 +1142,74 @@ function show3DTab() {
       msg.textContent = '3D build failed: ' + e.message;
     }
   }
+}
+
+/* Load the uploaded SVG logo into an Image for crisp rasterisation in the 3D
+ * relief. Cached on state; resolves null if there is no SVG. */
+function loadSvgLogoImg() {
+  if (!state.svgLogoUrl) return Promise.resolve(null);
+  if (state._svgLogoImg && state._svgLogoImg.__src === state.svgLogoUrl) return Promise.resolve(state._svgLogoImg);
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload  = () => { img.__src = state.svgLogoUrl; state._svgLogoImg = img; resolve(img); };
+    img.onerror = () => resolve(null);
+    img.src = state.svgLogoUrl;
+  });
+}
+
+/* Read the 3D Relief sliders (+ optional SVG logo) into qr3d.build() options. */
+async function relief3dOpts() {
+  const num = (id, d) => { const el = $(id); const v = el ? parseFloat(el.value) : NaN; return isNaN(v) ? d : v; };
+  const o = {
+    baseThickness: num('r3dThickness', 2),
+    layerHeight:   num('r3dRelief', 0.8),
+    colors:        Math.round(num('r3dColors', 4)),
+    logoSvgImg:    await loadSvgLogoImg(),   // crisp 3D centre logo (or null → card crop)
+  };
+  const size = num('r3dSize', 0);
+  if (size > 0) o.longEdgeMM = size;   // 0 = auto (real card size)
+  return o;
+}
+
+/* Rebuild the cached 3D model from the current card + sliders and re-mount. */
+async function rebuild3D() {
+  if (!window.QR3D || !state.lastCard || !state.qrMatrix) return;
+  const panel = $('tab-3d');
+  if (!panel || panel.classList.contains('hidden')) return; // only when 3D tab is visible
+  const matrix = {
+    size: state.qrMatrix.size,
+    data: Uint8Array.from(atob(state.qrMatrix.data), c => c.charCodeAt(0)),
+  };
+  try {
+    state.group3d = window.QR3D.build(state.lastCard.canvas, state.lastCard.layout, matrix, await relief3dOpts());
+    window.QR3D.mountPreview(state.group3d, $('viewer3d'));
+    $('btn3mf').disabled = false; $('btnStlNew').disabled = false;
+  } catch (e) {
+    if (e.message !== 'NO_WEBGL') $('msg3d').textContent = '3D build failed: ' + e.message;
+  }
+}
+
+let _r3dTimer = null;
+function onRelief3dInput() {
+  // live value labels
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  set('r3dThicknessV', (+$('r3dThickness').value).toFixed(1));
+  set('r3dReliefV',    (+$('r3dRelief').value).toFixed(1));
+  set('r3dColorsV',    $('r3dColors').value);
+  const sz = +$('r3dSize').value;
+  set('r3dSizeV', sz > 0 ? sz + ' mm' : 'auto');
+  // invalidate cache + debounce a live rebuild
+  state.group3d = null;
+  clearTimeout(_r3dTimer);
+  _r3dTimer = setTimeout(rebuild3D, 140);
+}
+
+let _embedTimer = null;
+function onEmbedSizeInput() {
+  $('r3dEmbedV').textContent = $('r3dEmbed').value;
+  // embed size lives in the card render → regenerate the card (debounced)
+  clearTimeout(_embedTimer);
+  _embedTimer = setTimeout(() => generate(), 300);
 }
 
 function showStatus(msg, type) {

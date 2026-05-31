@@ -147,14 +147,12 @@
     </div>
 
     <div class="field">
-      <label>
-        Logo (PNG, JPG or SVG - max 2 MB)
-        <span class="muted-note" id="svgNote" style="display:none;"> SVG enables 3D logo extrusion</span>
-      </label>
+      <label>Card logo image (PNG / JPG — max 2 MB)</label>
+      <span class="muted-note">Used for the printed/PNG card (top emblem + QR centre).</span>
       <div class="logo-upload-row">
-        <label class="logo-upload-btn" for="logoFile">Upload logo</label>
+        <label class="logo-upload-btn" for="logoFile">Upload image</label>
         <input type="file" id="logoFile"
-               accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml"
+               accept=".png,.jpg,.jpeg,image/png,image/jpeg"
                style="display:none" onchange="handleLogoUpload(this)" />
         <button class="logo-clear-btn" id="logoClear"
                 onclick="clearLogo()" style="display:none;">Remove</button>
@@ -162,6 +160,44 @@
       <div class="logo-preview-wrap" id="logoPreviewWrap" style="display:none;">
         <img id="logoPreview" src="" alt="logo preview" />
       </div>
+    </div>
+
+    <div class="field">
+      <label>3D model logo (SVG — max 2 MB)</label>
+      <span class="muted-note">Vector logo used only for the 3D relief's QR-centre (crisp). Optional — falls back to the card image.</span>
+      <div class="logo-upload-row">
+        <label class="logo-upload-btn" for="svgLogoFile">Upload SVG</label>
+        <input type="file" id="svgLogoFile"
+               accept=".svg,image/svg+xml"
+               style="display:none" onchange="handleSvgLogoUpload(this)" />
+        <button class="logo-clear-btn" id="svgLogoClear"
+                onclick="clearSvgLogo()" style="display:none;">Remove</button>
+      </div>
+      <div class="logo-preview-wrap" id="svgLogoPreviewWrap" style="display:none;">
+        <img id="svgLogoPreview" src="" alt="svg logo preview" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="embed-logo-row">
+        <input type="checkbox" id="embedLogo" checked />
+        <span>Embed logo in QR centre</span>
+      </label>
+      <span class="muted-note">On: your uploaded logo sits in the QR centre (error-correction H keeps it scannable). With no logo uploaded, the centre is reserved blank. Off: a full QR with no centre logo.</span>
+    </div>
+    <div class="field">
+      <label class="embed-logo-row">
+        <input type="checkbox" id="vCenter" onchange="if(state.pngBase64)generate()" />
+        <span>Vertically centre header (when no top logo)</span>
+      </label>
+      <span class="muted-note">Off: header sits just above the QR. On: header is centred in the space above the QR.</span>
+    </div>
+    <div class="field">
+      <label>Logo shape</label>
+      <select id="embedShape" onchange="if(state.pngBase64)generate()">
+        <option value="circle" selected>Circle</option>
+        <option value="square">Square</option>
+      </select>
     </div>
 
     <div class="row2">
@@ -194,7 +230,33 @@
       </div>
     </div>
 
-    <div class="section-title">3D Plate Dimensions (mm)</div>
+    <div class="section-title">3D Relief Settings</div>
+    <div class="muted-note" style="margin:-4px 0 8px;">Live-adjusts the 3D Model preview &amp; the 3MF/STL export.</div>
+    <div class="field">
+      <label>Plaque thickness <span id="r3dThicknessV">2.0</span> mm</label>
+      <input type="range" id="r3dThickness" min="1" max="6" step="0.5" value="2" oninput="onRelief3dInput()" />
+    </div>
+    <div class="field">
+      <label>Relief / QR raise <span id="r3dReliefV">0.8</span> mm</label>
+      <input type="range" id="r3dRelief" min="0.4" max="2.5" step="0.1" value="0.8" oninput="onRelief3dInput()" />
+    </div>
+    <div class="field">
+      <label>Plaque size (long edge) <span id="r3dSizeV">auto</span></label>
+      <input type="range" id="r3dSize" min="100" max="300" step="5" value="0" oninput="onRelief3dInput()" />
+      <span class="muted-note">0 = auto (real card size). Move to override in mm.</span>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Colours <span id="r3dColorsV">4</span></label>
+        <input type="range" id="r3dColors" min="2" max="6" step="1" value="4" oninput="onRelief3dInput()" />
+      </div>
+      <div class="field">
+        <label>Logo area <span id="r3dEmbedV">22</span>%</label>
+        <input type="range" id="r3dEmbed" min="12" max="34" step="1" value="22" oninput="onEmbedSizeInput()" />
+      </div>
+    </div>
+
+    <div class="section-title">OpenSCAD Export (legacy .scad)</div>
     <div class="row3">
       <div class="field"><label>Width</label><input type="number" id="baseLength" value="90" min="30" max="300" /></div>
       <div class="field"><label>Height</label><input type="number" id="baseWidth" value="90" min="30" max="300" /></div>

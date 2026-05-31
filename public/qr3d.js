@@ -162,7 +162,9 @@ export function build(canvas, layout, matrix, opts = {}) {
     { cellHeightMM: layerH, baseZ: layerH, logoRect: logoRectMM, logoShape,
       moduleColor: layout.qrColor || 0x000000 });
   if (lr) {
-    try { buildCenterLogo(canvas, lr, logoRectMM, layerH, logoShape).children.forEach(m => qrGroup.add(m)); }
+    // Prefer the dedicated SVG logo (crisp vector) for the 3D centre; else crop
+    // the rendered card canvas.
+    try { buildCenterLogo(canvas, lr, logoRectMM, layerH, logoShape, opts.logoSvgImg || null).children.forEach(m => qrGroup.add(m)); }
     catch (e) { console.warn('centre logo skipped', e.message); }
   }
   qrGroup.position.z = baseT;
@@ -172,17 +174,25 @@ export function build(canvas, layout, matrix, opts = {}) {
 
 /**
  * Build the embedded centre logo as a colour relief, cropped from the (full-res,
- * un-blanked) source card canvas. The lightest colour cluster is treated as the
- * white logo backing (the QR field already provides white there) and skipped;
- * the remaining clusters extrude as the raised logo. Returns a THREE.Group whose
- * meshes sit at z=heightMM (on top of the QR field), in qrRectMM coordinates.
+ * un-blanked) source card canvas. The DOMINANT (most-common) colour cluster is
+ * treated as the backing and skipped — works whether the backing is light or
+ * dark; the remaining clusters extrude as the raised logo. Returns a THREE.Group
+ * whose meshes sit at z=heightMM (on top of the QR field), in qrRectMM coords.
  */
-function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, logoShape = 'rect') {
-  const work = 160; // higher res → crisper logo silhouette
+function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, logoShape = 'rect', svgImg = null) {
+  const work = svgImg ? 256 : 160; // SVG → render larger for a crisper silhouette
   const cc = document.createElement('canvas'); cc.width = work; cc.height = work;
   const cx = cc.getContext('2d');
   cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, work, work); // flatten transparency to white
-  cx.drawImage(srcCanvas, logoRectDev.x, logoRectDev.y, logoRectDev.w, logoRectDev.h, 0, 0, work, work);
+  if (svgImg && svgImg.width && svgImg.height) {
+    // Crisp vector logo: contain-fit into the work square (small inset).
+    const pad = work * 0.06, avail = work - pad*2;
+    const s = Math.min(avail / svgImg.width, avail / svgImg.height);
+    const dw = svgImg.width * s, dh = svgImg.height * s;
+    cx.drawImage(svgImg, (work-dw)/2, (work-dh)/2, dw, dh);
+  } else {
+    cx.drawImage(srcCanvas, logoRectDev.x, logoRectDev.y, logoRectDev.w, logoRectDev.h, 0, 0, work, work);
+  }
   // Service cards use a circular logo backing: mask the crop to a circle so the
   // square corners don't extrude as stray relief.
   if (logoShape === 'circle') {
@@ -199,9 +209,10 @@ function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, logoShape
   const img = cx.getImageData(0, 0, work, work);
   const k = 4; // more clusters → more faithful logo colours
   const { palette, labels } = quantize(img, k);
-  const luma = ([r, g, b]) => 0.299*r + 0.587*g + 0.114*b;
-  let bg = 0, best = -1;
-  palette.forEach((p, i) => { const l = luma(p); if (l > best) { best = l; bg = i; } });
+  // Backing = the dominant (most-common) cluster, whether light or dark.
+  const counts = new Array(palette.length).fill(0);
+  for (const l of labels) counts[l]++;
+  const bg = counts.indexOf(Math.max(...counts));
   const grp = new THREE.Group();
   const pxToMM_logo = logoRectMM.w / work;
   for (let c = 0; c < palette.length; c++) {
