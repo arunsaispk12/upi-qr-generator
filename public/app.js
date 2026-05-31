@@ -820,7 +820,7 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   // Header block advances (must match the draw steps below).
   const emblemAdv = emblemDims ? emblemDims.h+16 : 0;
   const brandAdv  = brand.lines.length===1 ? brand.fs+8 : brand.lines.length*(brand.fs+4)+4;
-  const headerAdv = emblemAdv + brandAdv + 20/*tagline*/ + 34/*action*/ + 16/*via*/;
+  const headerAdv = emblemAdv + brandAdv + 34/*tagline*/ + 42/*action*/;
   const bandH = HEADER_BOT - HEADER_TOP;
   // Placement within the band:
   //   • uploaded logo  → TOP-anchor so the emblem is dominant at the top (matches reference),
@@ -848,39 +848,33 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
     y += 4;
   }
 
-  // ── TAGLINE with flanking lines, or thin divider ──────────────────
+  // ── TAGLINE — bold & thick (full opacity) for clean 3D extrusion ──────
   if (tagline) {
     const tl=tagline.toUpperCase();
-    ctx.font='12px sans-serif';
+    ctx.font='800 18px sans-serif';
     const tW=ctx.measureText(tl).width;
     const ll=Math.max(0,(W-tW-48)/2-6);
-    ctx.globalAlpha=divAlpha*2; ctx.strokeStyle=textCol; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(M+16,y+8); ctx.lineTo(M+16+ll,y+8); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx+tW/2+6,y+8); ctx.lineTo(cx+tW/2+6+ll,y+8); ctx.stroke();
-    ctx.globalAlpha=0.7; ctx.fillStyle=textCol;
+    ctx.globalAlpha=divAlpha*2; ctx.strokeStyle=textCol; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(M+16,y+11); ctx.lineTo(M+16+ll,y+11); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+tW/2+6,y+11); ctx.lineTo(cx+tW/2+6+ll,y+11); ctx.stroke();
+    ctx.globalAlpha=1; ctx.fillStyle=textCol;
     ctx.fillText(tl, cx, y+1);
-    ctx.globalAlpha=1;
   } else {
     ctx.strokeStyle=textCol; ctx.lineWidth=1; ctx.globalAlpha=divAlpha;
     ctx.beginPath(); ctx.moveTo(M+16,y+8); ctx.lineTo(M+W-16,y+8); ctx.stroke();
     ctx.globalAlpha=1;
   }
-  y += 20;
+  y += 30;
 
-  // ── ACTION (SCAN …) with flanking lines ───────────────────────────
-  y += 12;
-  ctx.font='bold 16px sans-serif'; ctx.fillStyle=textCol; ctx.textBaseline='top';
+  // ── ACTION (SCAN …) with flanking lines — bold/thick for 3D print ────
+  y += 14;
+  ctx.font='800 21px sans-serif'; ctx.fillStyle=textCol; ctx.textBaseline='top';
   const spTxt=cfg.action, spW=ctx.measureText(spTxt).width;
   const dl=Math.max(0,(W-spW-48)/2-6);
-  ctx.strokeStyle=textCol; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.moveTo(M+16,y+10); ctx.lineTo(M+16+dl,y+10); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(cx+spW/2+6,y+10); ctx.lineTo(cx+spW/2+6+dl,y+10); ctx.stroke();
+  ctx.strokeStyle=textCol; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(M+16,y+12); ctx.lineTo(M+16+dl,y+12); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+spW/2+6,y+12); ctx.lineTo(cx+spW/2+6+dl,y+12); ctx.stroke();
   ctx.fillText(spTxt, cx, y);
-  y += 22;
-
-  // ── VIA … ─────────────────────────────────────────────────────────
-  ctx.font='12px sans-serif'; ctx.fillStyle=muteCol; ctx.globalAlpha=1;
-  ctx.fillText(cfg.via, cx, y);
 
   // ── QR BOX — drawn at the LOCKED qbY (header above adapts to it) ───
   // White rounded field (quiet zone) + a brand-colour outline frame just outside
@@ -924,29 +918,29 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
 
   // ── BELOW-QR BLOCK (pill [+ badges]) — centred in the gap between the QR and
   // the footer so there's no empty space dumped at the bottom. ──────
-  const pillH=36, pillW=W-60;
-  const _badgeBh=40;
-  const belowGroupH = cfg.badges ? (pillH + 10 + 16 + _badgeBh) : pillH;
+  const pillH=46, pillW=W-50;          // taller pill, fuller width
+  const _badgeBh=48;
+  const belowGroupH = cfg.badges ? (pillH + 12 + 18 + _badgeBh) : pillH;
   const _belowTop = qbY+qbSz, _footerTop = M+H-56;
-  y = _belowTop + Math.max(14, Math.round((_footerTop - _belowTop - belowGroupH)/2));
+  y = _belowTop + Math.max(16, Math.round((_footerTop - _belowTop - belowGroupH)/2));
 
-  // ── INFO PILL (UPI id / phone / @user / hostname / SSID) ──────────
-  ctx.fillStyle=pc; rr(M+30,y,pillW,pillH,pillH/2); ctx.fill();
+  // ── INFO PILL (UPI id / phone / @user / hostname / SSID) — big & bold ──
+  ctx.fillStyle=pc; rr(cx-pillW/2,y,pillW,pillH,pillH/2); ctx.fill();
   // Dark text on a light/gold pill, white on a dark pill (matches reference).
   ctx.fillStyle = luma(pc) > 150 ? '#1a1a1a' : '#ffffff';
-  ctx.font='900 20px monospace'; ctx.textBaseline='middle';
+  ctx.font='900 25px monospace'; ctx.textBaseline='middle';
   const pillFull = (cfg.pill(data) || '').toString();
   let uid=pillFull;
-  while(ctx.measureText(uid).width>pillW-28&&uid.length>6) uid=uid.slice(0,-1);
+  while(ctx.measureText(uid).width>pillW-34&&uid.length>6) uid=uid.slice(0,-1);
   if(uid!==pillFull) uid+='…';
-  ctx.fillText(uid, cx, y+pillH/2);
-  y += pillH+10;
+  ctx.fillText(uid, cx, y+pillH/2+1);
+  y += pillH+12;
 
   // ── Payment apps (UPI only) ───────────────────────────────────────
   if (cfg.badges) {
-  ctx.fillStyle=muteCol; ctx.font='bold 10px sans-serif'; ctx.textBaseline='top';
+  ctx.fillStyle=muteCol; ctx.font='700 14px sans-serif'; ctx.textBaseline='top';
   ctx.fillText('ALL UPI APPS ACCEPTED', cx, y);
-  y += 16;
+  y += 18;
 
   // ── PAYMENT APP LOGOS — real brand images in pill containers ────
   {
@@ -954,7 +948,7 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
       loadBadge('gpay'), loadBadge('phonepe'), loadBadge('paytm'),
     ]);
 
-    const bh = 40, gap = 12, pad = 6;
+    const bh = 48, gap = 12, pad = 7;
     const logoH = bh - pad * 2;
 
     function badgeAr(img, fallbackAr) {
@@ -1010,8 +1004,8 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
 
   // Trust signals: icon + label, separated by |
   {
-    const fcy = footY+footH/2, icSz=footH*0.40, icY=fcy-icSz/2;
-    const trustFont=`bold 11px sans-serif`;
+    const fcy = footY+footH/2, icSz=footH*0.46, icY=fcy-icSz/2;
+    const trustFont=`800 14px sans-serif`;
     ctx.font=trustFont;
     // Prefer supplied icon images (tinted to the footer colour); fall back to
     // the code-drawn icons if a file is missing.
