@@ -53,3 +53,30 @@ test('export3MF returns a zip (3MF) buffer', async () => {
   assert.strictEqual(buf[0], 0x50); assert.strictEqual(buf[1], 0x4b); // PK zip header
   assert.ok(buf.length > 100);
 });
+
+test('3MF is multi-material — one part per mesh on separate extruders (Bambu)', async () => {
+  const JSZip = require('jszip');
+  const m = qrmat.getQrMatrix('https://example.com');
+  const bytes = Buffer.from(m.data, 'base64');
+  // sharp QR = 2 meshes: white field + black modules.
+  const { group } = qr3d.buildSharpQr({ size: m.size, data: bytes },
+    { x: 0, y: 0, w: 100, h: 100 }, { cellHeightMM: 1, baseZ: 2 });
+  const buf = await qr3d.export3MFBuffer(group);
+  const zip = await JSZip.loadAsync(buf);
+
+  // Geometry: a mesh object per colour.
+  const model = await zip.file('3D/3dmodel.model').async('string');
+  const meshObjects = (model.match(/<object\b[^>]*type="model"/g) || []).length;
+  assert.ok(meshObjects >= 2, 'a mesh object per colour (got ' + meshObjects + ')');
+
+  // Bambu multi-material: each part assigned to a distinct extruder.
+  const cfg = await zip.file('Metadata/model_settings.config').async('string');
+  const extruders = new Set((cfg.match(/key="extruder"\s+value="(\d+)"/g) || [])
+    .map(s => s.match(/value="(\d+)"/)[1]));
+  assert.ok(extruders.size >= 2, 'parts on separate extruders (got ' + [...extruders].join(',') + ')');
+
+  // Filament colours present in project settings.
+  const proj = await zip.file('Metadata/project_settings.config').async('string');
+  const colors = new Set((proj.match(/#[0-9A-Fa-f]{6}/g) || []).map(c => c.toLowerCase()));
+  assert.ok(colors.size >= 2, 'distinct filament colours (got ' + [...colors].join(',') + ')');
+});

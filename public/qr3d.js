@@ -100,7 +100,10 @@ export function build(canvas, layout, matrix, opts = {}) {
   const baseT = opts.baseThickness || 2;
   const layerH = opts.layerHeight || 0.8;
 
-  const targetLong = opts.workPx || 350;
+  // Higher working resolution so the (bold, 0.4mm-sized) text strokes survive
+  // contouring and actually appear in the printed relief. Palette-snap quantize
+  // is a cheap single pass, so we can afford it.
+  const targetLong = opts.workPx || 760;
   const scale = targetLong / Math.max(canvas.width, canvas.height);
   const w = Math.max(1, Math.round(canvas.width * scale));
   const h = Math.max(1, Math.round(canvas.height * scale));
