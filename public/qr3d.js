@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { exportTo3MF } from 'three-3mf-exporter';
-import { quantize, maskForColor, maskToGeometry } from './relief.js';
+import { quantize, quantizeToPalette, maskForColor, maskToGeometry } from './relief.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 /**
@@ -119,11 +119,15 @@ export function build(canvas, layout, matrix, opts = {}) {
   const pxToMM = longEdgeMM / Math.max(w, h);
   const group = new THREE.Group();
 
-  // Quantize first so the base plate can take the DOMINANT CLUSTER colour
-  // (e.g. the card's black), not the muddy pixel average that the gold accents
-  // and the blanked-white QR region would skew.
-  const { palette, labels } = quantize(img, k);
-  const baseIdx = dominantLabel(labels, k);
+  // Quantize. Prefer SNAP-TO-PALETTE using the card's exact design colours
+  // (layout.paletteHints) → clean layers with no muddy intermediate shades,
+  // ideal for multi-material 3MF. Fall back to k-means if hints are absent.
+  const hints = Array.isArray(layout.paletteHints) ? layout.paletteHints.filter(Boolean) : null;
+  const { palette, labels } = hints && hints.length
+    ? quantizeToPalette(img, hints)
+    : quantize(img, k);
+  const nColors = palette.length;
+  const baseIdx = dominantLabel(labels, nColors);
 
   // Rounded-corner base plate (matches the card's rounded rectangle) — a finished
   // plaque look rather than a hard-edged slab.
@@ -135,7 +139,7 @@ export function build(canvas, layout, matrix, opts = {}) {
   plate.position.set(plateW/2, -plateH/2, 0); // centred shape → align to relief frame
   group.add(plate);
 
-  for (let c = 0; c < k; c++) {
+  for (let c = 0; c < nColors; c++) {
     if (c === baseIdx) continue;
     try {
       const mask = maskForColor(labels, c, { width: w, height: h });

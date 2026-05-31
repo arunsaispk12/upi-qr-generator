@@ -1,6 +1,38 @@
 import { contours as d3contours } from 'd3-contour';
 import { Shape, Path, ExtrudeGeometry } from 'three';
 
+/** Parse "#rrggbb" → [r,g,b]. */
+export function hexToRgb(hex) {
+  const h = (hex || '').replace('#', '');
+  return [parseInt(h.slice(0,2),16)||0, parseInt(h.slice(2,4),16)||0, parseInt(h.slice(4,6),16)||0];
+}
+
+/**
+ * Snap every pixel to its NEAREST colour in a fixed palette (Euclidean RGB).
+ * Unlike k-means this invents no muddy intermediate shades — each label maps to
+ * an exact design colour, giving clean layers for multi-material 3MF printing.
+ * @param {ImageData} imageData
+ * @param {string[]} hexPalette  e.g. ['#0d2e8a','#000000','#ffffff','#1a1a2e']
+ * @returns {{ palette: number[][], labels: Int32Array }}
+ */
+export function quantizeToPalette(imageData, hexPalette) {
+  const { data, width, height } = imageData;
+  const n = width * height;
+  const palette = hexPalette.map(hexToRgb);
+  const labels = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    const r = data[i*4], g = data[i*4+1], b = data[i*4+2];
+    let best = 0, bd = Infinity;
+    for (let c = 0; c < palette.length; c++) {
+      const dr=r-palette[c][0], dg=g-palette[c][1], db=b-palette[c][2];
+      const d = dr*dr + dg*dg + db*db;
+      if (d < bd) { bd = d; best = c; }
+    }
+    labels[i] = best;
+  }
+  return { palette, labels };
+}
+
 /**
  * Tiny deterministic k-means over RGB. Seeds clusters by evenly sampling the
  * luma-sorted pixels so results are reproducible (no Math.random).

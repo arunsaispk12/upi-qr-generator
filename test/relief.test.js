@@ -16,6 +16,16 @@ function fixtureImageData() {
   return { width: w, height: h, data };
 }
 
+test('quantizeToPalette snaps pixels to the nearest exact palette colour', () => {
+  // black/white fixture + a near-black grey pixel should snap to black, not invent a shade
+  const img = fixtureImageData();
+  img.data[0]=20; img.data[1]=20; img.data[2]=20; // top-left → near black
+  const q = relief.quantizeToPalette(img, ['#000000', '#ffffff']);
+  assert.deepStrictEqual(q.palette, [[0,0,0],[255,255,255]]); // exact, no muddy shades
+  assert.strictEqual(q.labels[0], 0);  // near-black snaps to black
+  assert.strictEqual(q.labels[2], 1);  // white px snaps to white
+});
+
 test('quantize finds 2 clusters and is deterministic on a fixture', () => {
   const a = relief.quantize(fixtureImageData(), 2);
   const b = relief.quantize(fixtureImageData(), 2);
