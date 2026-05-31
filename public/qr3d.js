@@ -172,10 +172,10 @@ export function build(canvas, layout, matrix, opts = {}) {
 
 /**
  * Build the embedded centre logo as a colour relief, cropped from the (full-res,
- * un-blanked) source card canvas. The lightest colour cluster is treated as the
- * white logo backing (the QR field already provides white there) and skipped;
- * the remaining clusters extrude as the raised logo. Returns a THREE.Group whose
- * meshes sit at z=heightMM (on top of the QR field), in qrRectMM coordinates.
+ * un-blanked) source card canvas. The DOMINANT (most-common) colour cluster is
+ * treated as the backing and skipped — works whether the backing is light or
+ * dark; the remaining clusters extrude as the raised logo. Returns a THREE.Group
+ * whose meshes sit at z=heightMM (on top of the QR field), in qrRectMM coords.
  */
 function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, logoShape = 'rect') {
   const work = 160; // higher res → crisper logo silhouette
@@ -199,9 +199,10 @@ function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, logoShape
   const img = cx.getImageData(0, 0, work, work);
   const k = 4; // more clusters → more faithful logo colours
   const { palette, labels } = quantize(img, k);
-  const luma = ([r, g, b]) => 0.299*r + 0.587*g + 0.114*b;
-  let bg = 0, best = -1;
-  palette.forEach((p, i) => { const l = luma(p); if (l > best) { best = l; bg = i; } });
+  // Backing = the dominant (most-common) cluster, whether light or dark.
+  const counts = new Array(palette.length).fill(0);
+  for (const l of labels) counts[l]++;
+  const bg = counts.indexOf(Math.max(...counts));
   const grp = new THREE.Group();
   const pxToMM_logo = logoRectMM.w / work;
   for (let c = 0; c < palette.length; c++) {

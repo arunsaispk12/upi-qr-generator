@@ -808,10 +808,8 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   // ── QR BOX — fixed 380 for ALL cards: locked, consistent QR dimension ──
   const QS=380, qbPad=10, qbSz=QS+qbPad*2;
   const qbX=M+(W-qbSz)/2, qbY=y+8;
-  ctx.strokeStyle=pc; ctx.lineWidth=3;
-  rr(qbX,qbY,qbSz,qbSz,14); ctx.stroke();
-  // QR always on white for scannability
-  ctx.fillStyle='#ffffff'; rr(qbX+2,qbY+2,qbSz-4,qbSz-4,12); ctx.fill();
+  // Clean white rounded field (quiet zone) — no coloured frame, matches reference.
+  ctx.fillStyle='#ffffff'; rr(qbX,qbY,qbSz,qbSz,14); ctx.fill();
   ctx.drawImage(qrEl, qbX+qbPad, qbY+qbPad, QS, QS);
 
   // Device-pixel rect of the QR field (canvas is scaled by SC), for the 3D relief.
@@ -831,7 +829,9 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
       if (logoShape === 'circle') { ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, (os+10)/2, 0, Math.PI*2); }
       else rr(ox-5, oy-5, os+10, os+10, 7);
     };
-    ctx.fillStyle='#ffffff'; backing(); ctx.fill();
+    // Dark backing on dark cards (emblem on black, like the reference); the
+    // outline still delineates it. On light cards this stays light.
+    ctx.fillStyle=bgColor; backing(); ctx.fill();
     if (centreImg) {
       ctx.save();
       if (logoShape === 'circle') { ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip(); }
@@ -848,7 +848,9 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   // ── INFO PILL (UPI id / phone / @user / hostname / SSID) ──────────
   const pillH=36, pillW=W-60;
   ctx.fillStyle=pc; rr(M+30,y,pillW,pillH,pillH/2); ctx.fill();
-  ctx.fillStyle='#ffffff'; ctx.font='900 20px monospace'; ctx.textBaseline='middle';
+  // Dark text on a light/gold pill, white on a dark pill (matches reference).
+  ctx.fillStyle = luma(pc) > 150 ? '#1a1a1a' : '#ffffff';
+  ctx.font='900 20px monospace'; ctx.textBaseline='middle';
   const pillFull = (cfg.pill(data) || '').toString();
   let uid=pillFull;
   while(ctx.measureText(uid).width>pillW-28&&uid.length>6) uid=uid.slice(0,-1);
@@ -937,10 +939,12 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
     const itemWidths=items.map(it=>icSz+4+ctx.measureText(it.label).width);
     const totalTW=itemWidths.reduce((s,w)=>s+w,0)+sepW*(items.length-1);
     let tx=cx-totalTW/2;
-    ctx.fillStyle='#ffffff'; ctx.textBaseline='middle';
+    // Dark trust text/icons on a light/gold footer, white on a dark footer.
+    const footCol = luma(pc) > 150 ? '#1a1a1a' : '#ffffff';
+    ctx.fillStyle=footCol; ctx.textBaseline='middle';
     items.forEach((it,i)=>{
-      it.draw(tx,icY,icSz,'#ffffff');
-      ctx.font=trustFont; ctx.fillStyle='#ffffff';
+      it.draw(tx,icY,icSz,footCol);
+      ctx.font=trustFont; ctx.fillStyle=footCol;
       ctx.textAlign='left';
       ctx.fillText(it.label, tx+icSz+4, fcy);
       tx+=itemWidths[i];
