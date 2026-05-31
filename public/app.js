@@ -83,10 +83,16 @@ let state = {
 
 /* ── Payment badge image loader (cached) ────────────────────────── */
 const _badgeCache = {};
-// Logos present as raster images in /logos. Only these are fetched; anything
-// else resolves null (→ canvas-drawn fallback for payment badges, empty centre
-// for service cards) so there are no 404s for logos that aren't supplied yet.
-const BADGE_EXT = { gpay: 'png', phonepe: 'png', paytm: 'png' };
+// Logos fetched from /logos as raster PNGs. Listed names are drop-in ready:
+// add the matching <name>.png file and it appears automatically (top emblem +
+// QR centre for service cards; the badge row for payment apps). Until a file
+// exists its fetch 404s harmlessly and falls back (canvas-drawn payment badge /
+// empty reserved centre). Service apps below are AWAITING real logo files.
+const BADGE_EXT = {
+  gpay: 'png', phonepe: 'png', paytm: 'png',           // present
+  whatsapp: 'png', instagram: 'png', google: 'png',    // awaiting files
+  wifi: 'png', url: 'png',                              // awaiting files
+};
 function loadBadge(name) {
   if (!(name in BADGE_EXT)) return Promise.resolve(null);
   if (_badgeCache[name]) return Promise.resolve(_badgeCache[name]);
@@ -619,7 +625,10 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   const bgColor   = /^#[0-9a-fA-F]{6}$/.test(data.bgColor||'')      ? data.bgColor      : '#ffffff';
   const brandName = data.brandName || data.payeeName || (typeDef.getLabel ? typeDef.getLabel(data) : '') || 'Brand';
   const tagline   = (data.tagline  || '').trim();
-  const centreImg = logoImg || svcLogoImg || null;   // QR-centre logo (badge fallback)
+  // Uploaded logo wins; otherwise the service badge fills BOTH the top emblem
+  // and the QR centre (so service cards aren't empty at the top).
+  const topLogo   = logoImg || svcLogoImg || null;   // top emblem
+  const centreImg = logoImg || svcLogoImg || null;   // QR-centre logo
 
   // Derive readable colours for text/lines on top of bgColor
   function luma(hex) {
@@ -787,11 +796,12 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   const brand=computeBrand();
 
   // Emblem dimensions (scaled), if a top logo is present.
+  // Uploaded brand logo → dominant (235). Service badge fallback → smaller icon (130).
   let emblemDims=null;
-  if (logoImg) {
-    const maxH=235, maxW=W*0.82;   // fits the header band above the larger locked QR
-    const sc=Math.min(maxH/logoImg.naturalHeight, maxW/logoImg.naturalWidth);
-    emblemDims={ w:Math.round(logoImg.naturalWidth*sc), h:Math.round(logoImg.naturalHeight*sc) };
+  if (topLogo) {
+    const maxH = logoImg ? 235 : 130, maxW = logoImg ? W*0.82 : 200;
+    const sc=Math.min(maxH/topLogo.naturalHeight, maxW/topLogo.naturalWidth);
+    emblemDims={ w:Math.round(topLogo.naturalWidth*sc), h:Math.round(topLogo.naturalHeight*sc) };
   }
   // Header block advances (must match the draw steps below).
   const emblemAdv = emblemDims ? emblemDims.h+18 : 0;
@@ -805,7 +815,7 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
 
   // ── EMBLEM (top logo) ─────────────────────────────────────────────
   if (emblemDims) {
-    ctx.drawImage(logoImg, cx-emblemDims.w/2, y, emblemDims.w, emblemDims.h);
+    ctx.drawImage(topLogo, cx-emblemDims.w/2, y, emblemDims.w, emblemDims.h);
     y += emblemDims.h+18;
   }
 
