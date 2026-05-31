@@ -776,9 +776,9 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
    *   BADGES      : fixed, below the pill (UPI only)
    *   FOOTER      : fixed, bottom 56px
    */
-  const QS=450, qbPad=10, qbSz=QS+qbPad*2;     // QR box — LOCKED size (dominant, matches reference)
-  const qbX=M+(W-qbSz)/2, qbY=M+405;            // QR box — LOCKED position (sits lower → fills toward footer)
-  const HEADER_TOP=M+22, HEADER_BOT=qbY-16;     // extra gap below header for the thick QR frame
+  const QS=410, qbPad=10, qbSz=QS+qbPad*2;     // QR box — LOCKED size (clears the card border)
+  const qbX=M+(W-qbSz)/2, qbY=M+466;            // QR box — LOCKED position
+  const HEADER_TOP=M+22, HEADER_BOT=qbY-22;     // gap below header clears the thick QR frame
 
   // Pre-measure brand name (1 or 2 lines) to size the header band.
   function computeBrand() {
@@ -799,19 +799,25 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   // Uploaded brand logo → dominant (235). Service badge fallback → smaller icon (130).
   let emblemDims=null;
   if (topLogo) {
-    const maxH = logoImg ? 235 : 130, maxW = logoImg ? W*0.82 : 200;
+    // Uploaded brand logo → DOMINANT emblem (≈ reference ~300). Service badge → smaller icon.
+    const maxH = logoImg ? 300 : 130, maxW = logoImg ? W*0.84 : 200;
     const sc=Math.min(maxH/topLogo.naturalHeight, maxW/topLogo.naturalWidth);
     emblemDims={ w:Math.round(topLogo.naturalWidth*sc), h:Math.round(topLogo.naturalHeight*sc) };
   }
   // Header block advances (must match the draw steps below).
-  const emblemAdv = emblemDims ? emblemDims.h+18 : 0;
+  const emblemAdv = emblemDims ? emblemDims.h+16 : 0;
   const brandAdv  = brand.lines.length===1 ? brand.fs+8 : brand.lines.length*(brand.fs+4)+4;
   const headerAdv = emblemAdv + brandAdv + 20/*tagline*/ + 34/*action*/ + 16/*via*/;
   const bandH = HEADER_BOT - HEADER_TOP;
-  // Placement within the band: vertical-centre (toggle) or bottom-anchor to QR.
-  let y = data.vCenter
-    ? HEADER_TOP + Math.max(0, (bandH - headerAdv)/2)
-    : Math.max(HEADER_TOP, HEADER_BOT - headerAdv);
+  // Placement within the band:
+  //   • uploaded logo  → TOP-anchor so the emblem is dominant at the top (matches reference),
+  //   • vCenter toggle → centre the header in the band,
+  //   • otherwise      → bottom-anchor to the QR.
+  let y = logoImg
+    ? HEADER_TOP
+    : (data.vCenter
+        ? HEADER_TOP + Math.max(0, (bandH - headerAdv)/2)
+        : Math.max(HEADER_TOP, HEADER_BOT - headerAdv));
 
   // ── EMBLEM (top logo) ─────────────────────────────────────────────
   if (emblemDims) {
