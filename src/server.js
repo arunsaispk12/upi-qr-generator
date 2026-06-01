@@ -13,20 +13,33 @@ app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Coerce a numeric plate field to a finite number clamped to [min,max], else def.
+// Every numeric field is interpolated raw into the .scad source, so a non-numeric
+// value (e.g. "1; cube([9,9,9])") would inject OpenSCAD — coercion closes that.
+function num(v, def, min, max) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(max, Math.max(min, n));
+}
+
 function extractPlateOpts(body) {
-  const {
-    baseLength = 90, baseWidth = 90, baseThickness = 2,
-    qrSize = 70, qrRaise = 0.8,
-    roundedCorners = false, cornerRadius = 4,
-    keyringHole = false, holeDiameter = 5, tabDiameter = 12, keyringPosition = 0,
-    centreLabel = true, centreLabelText, badgeWidth = 30, badgeHeight = 8,
-  } = body;
+  const { centreLabelText } = body;
   return {
-    baseLength, baseWidth, baseThickness, qrSize, qrRaise,
-    roundedCorners, cornerRadius, keyringHole, holeDiameter,
-    tabDiameter, keyringPosition, centreLabel,
+    baseLength:      num(body.baseLength,     90, 10, 500),
+    baseWidth:       num(body.baseWidth,      90, 10, 500),
+    baseThickness:   num(body.baseThickness,   2, 0.4, 50),
+    qrSize:          num(body.qrSize,         70, 5, 500),
+    qrRaise:         num(body.qrRaise,       0.8, 0, 10),
+    roundedCorners:  !!body.roundedCorners,
+    cornerRadius:    num(body.cornerRadius,    4, 0, 100),
+    keyringHole:     !!body.keyringHole,
+    holeDiameter:    num(body.holeDiameter,    5, 0.5, 50),
+    tabDiameter:     num(body.tabDiameter,    12, 1, 100),
+    keyringPosition: num(body.keyringPosition, 0, 0, 3),
+    centreLabel:     body.centreLabel === undefined ? true : !!body.centreLabel,
     centreLabelText: centreLabelText || 'QR',
-    badgeWidth, badgeHeight,
+    badgeWidth:      num(body.badgeWidth,     30, 1, 200),
+    badgeHeight:     num(body.badgeHeight,     8, 1, 100),
   };
 }
 

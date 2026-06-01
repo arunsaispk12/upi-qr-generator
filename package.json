@@ -19,9 +19,13 @@
     "canvas": "^2.11.2"
   },
   "devDependencies": {
+    "@fontsource/archivo": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "d3-contour": "^4.0.2",
     "jsqr": "^1.4.0",
+    "jszip": "^3.10.1",
     "nodemon": "^3.0.1",
+    "opentype.js": "^2.0.0",
     "three": "^0.184.0",
     "three-3mf-exporter": "^45.2.0"
   },

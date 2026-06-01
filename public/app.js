@@ -494,186 +494,23 @@ function downloadBW() {
   }, 'image/png');
 }
 
-function _xmlEsc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-/* Convert the canvas baseline mode → the exact alphabetic-baseline y offset, by
- * MEASURING the real font metrics (not approximating). This makes the SVG vector
- * text land precisely on the raster text beneath it, so there's no doubling.
- * Offset is in the same (scaled) px as the SVG font. */
-let _measCtx = null;
-function _baselineOffset(scaledFont, baseline) {
-  try {
-    if (!_measCtx) _measCtx = document.createElement('canvas').getContext('2d');
-    _measCtx.font = scaledFont;
-    // measureText's fontBoundingBoxAscent is reported RELATIVE to the current
-    // textBaseline. The shift from `baseline` to alphabetic is therefore the
-    // difference of the two ascents — exact for every mode, so the vector text
-    // lands precisely on the raster (no doubling).
-    _measCtx.textBaseline = 'alphabetic';
-    const aAlpha = _measCtx.measureText('Mg').fontBoundingBoxAscent;
-    _measCtx.textBaseline = baseline;
-    const aMode = _measCtx.measureText('Mg').fontBoundingBoxAscent;
-    if (aAlpha != null && aMode != null) return aAlpha - aMode;
-  } catch (e) { /* fall through to approximation */ }
-  const sz = parseFloat(scaledFont) || 12;
-  if (baseline === 'middle') return sz * 0.35;
-  if (baseline === 'top')    return sz * 0.80;
-  if (baseline === 'bottom') return -sz * 0.20;
-  return 0;
-}
-/* Convert a recorded canvas text draw → a crisp SVG <text> element (coords ×SC).
- * Baseline is baked into y (default alphabetic) — measured, not approximated —
- * since Inkscape/librsvg render dominant-baseline inconsistently. */
-function _textToSvg(t, SC) {
-  const mSize = /([\d.]+)px/.exec(t.font);
-  const sizePx = (mSize ? parseFloat(mSize[1]) : 12) * SC;
-  let weight = 'normal';
-  const mW = /^\s*(\d{3}|bold|bolder|lighter)/.exec(t.font); if (mW) weight = mW[1];
-  const family = /px\s+(.+)$/.exec(t.font); const fam = family ? family[1] : 'sans-serif';
-  const anchor = t.align === 'center' ? 'middle' : (t.align === 'right' || t.align === 'end') ? 'end' : 'start';
-  // Build the scaled font string and measure the exact baseline offset.
-  const scaledFont = `${weight} ${sizePx}px ${fam}`;
-  const yPos = t.y * SC + _baselineOffset(scaledFont, t.baseline || 'alphabetic');
-  const op = (t.alpha != null && t.alpha < 1) ? ` opacity="${(+t.alpha).toFixed(2)}"` : '';
-  return `<text x="${(t.x*SC).toFixed(1)}" y="${yPos.toFixed(1)}" `
-       + `font-family="${_xmlEsc(fam)}" font-size="${sizePx.toFixed(1)}" font-weight="${weight}" `
-       + `fill="${t.fill}" text-anchor="${anchor}"${op}>`
-       + `${_xmlEsc(t.str)}</text>`;
-}
-
-/* Build a single SVG path that is the UNION OUTLINE of all dark QR modules:
- * boundary edges only (no edges shared between two dark cells → no internal
- * seams), chained into closed loops, with collinear points merged. Filled with
- * fill-rule=evenodd so enclosed light regions punch through. Result is clean,
- * continuous geometry ideal for extrusion (Fusion / slicers). Integer grid coords.
- *   isDark(row,col) → bool;  grid placed at (ox,oy) with `cell` px modules. */
-function _qrOutlinePath(isDark, size, ox, oy, cell) {
-  const key = (x,y) => x + '_' + y;
-  const out = new Map();                       // start point → [end points]
-  const push = (x1,y1,x2,y2) => { const k=key(x1,y1); (out.get(k) || out.set(k,[]).get(k)).push([x2,y2]); };
-  // Emit each side clockwise around the filled cell, only where the neighbour is light.
-  for (let r=0; r<size; r++) for (let c=0; c<size; c++) {
-    if (!isDark(r,c)) continue;
-    if (!isDark(r-1,c)) push(c,   r,   c+1, r);     // top    →
-    if (!isDark(r,c+1)) push(c+1, r,   c+1, r+1);   // right  ↓
-    if (!isDark(r+1,c)) push(c+1, r+1, c,   r+1);   // bottom ←
-    if (!isDark(r,c-1)) push(c,   r+1, c,   r);     // left   ↑
-  }
-  const W = (gx,gy) => (ox + gx*cell) + ' ' + (oy + gy*cell);
-  let d = '';
-  for (const startK of out.keys()) {
-    let arr = out.get(startK);
-    while (arr && arr.length) {
-      const [sx, sy] = startK.split('_').map(Number);
-      const loop = [[sx, sy]];                 // unique vertices (no trailing dup)
-      let [cx, cy] = arr.pop();
-      while (!(cx === sx && cy === sy)) {
-        loop.push([cx, cy]);
-        const nexts = out.get(key(cx, cy));
-        if (!nexts || !nexts.length) break;     // open loop (shouldn't happen) → stop
-        const [nx, ny] = nexts.pop();
-        cx = nx; cy = ny;
-      }
-      // Drop collinear midpoints on the closed cycle (each straight run = 1 segment).
-      const n = loop.length, pts = [];
-      for (let i=0; i<n; i++) {
-        const a = loop[(i-1+n)%n], b = loop[i], c2 = loop[(i+1)%n];
-        const collinear = (b[0]-a[0])*(c2[1]-b[1]) === (b[1]-a[1])*(c2[0]-b[0]);
-        if (!collinear) pts.push(b);
-      }
-      if (pts.length >= 3) d += 'M' + pts.map(p => W(p[0], p[1])).join('L') + 'Z';
-      arr = out.get(startK);
-    }
-  }
-  return d;
-}
-
-/* Full card as a scalable SVG at real print size (mm), matching the PNG:
- *  • base raster of the card (background, logos, badges, pill, footer — in colour), plus
- *  • a sharp VECTOR QR (single continuous merged path — no internal seams), plus
- *  • the embedded centre logo re-placed on top of the QR field (so it isn't hidden), plus
- *  • the embed-area OUTLINE (circle/square) in the brand colour, plus
- *  • crisp VECTOR text redrawn from the recorded draws.
- * Logos/badges stay raster colour (overlaying their black SVG traces would
- * double/blacken them). Opens in Illustrator / Inkscape / browsers. */
+/* PURE-VECTOR card SVG for parametric CAD / extrusion.
+ * Delegates to public/svg-export.js, which replays the recorded card draws as
+ * pure vector: NO raster base, text→glyph OUTLINES, QR→exact-fit union path,
+ * logos→inlined .svg. This eliminates the old raster+vector text doubling and
+ * produces a file Fusion / FreeCAD / Blender / OpenSCAD can actually extrude. */
 async function downloadSVG() {
-  if (!state.pngBase64) return;
-  const lay = state.lastCard && state.lastCard.layout;
-  const cv  = state.lastCard && state.lastCard.canvas;
-  const W = cv ? cv.width : 1048, H = cv ? cv.height : 2248;
-  const SC = (lay && lay.sc) || 2;
+  if (!state.lastCard || !state.lastCard.layout) return;
+  if (!window.SVGCard) { showStatus('Vector SVG module not loaded', 'err'); return; }
   const longMM = (+val('r3dSize')) || 280;
-  const longPx = Math.max(W, H);
-  const wMM = (W / longPx) * longMM, hMM = (H / longPx) * longMM;
-  const pc = (lay && lay.paletteHints && lay.paletteHints[0]) || '#1a1a2e';
-
-  // ── Vector QR (single continuous merged path) ──
-  let qrLayer = '', outline = '';
-  const lr = lay && lay.logoRect;
-  if (lay && lay.qrRect && state.qrMatrix) {
-    const m = state.qrMatrix, bytes = Uint8Array.from(atob(m.data), c => c.charCodeAt(0));
-    const r = lay.qrRect, quiet = 1;
-    const col = (lay.qrColor || '#1a1a2e');
-    // INTEGER cell + integer origin → module edges land on a pixel boundary (crisp,
-    // no blur) and align cleanly for extrusion. Centre the grid in the field.
-    const cell = Math.floor(r.w / (m.size + quiet*2));
-    const gridSize = cell * m.size;
-    const ox = Math.round(r.x + (r.w - gridSize) / 2);
-    const oy = Math.round(r.y + (r.h - gridSize) / 2);
-    const inLogo = (x,y) => lr && x>=lr.x && x<=lr.x+lr.w && y>=lr.y && y<=lr.y+lr.h;
-    const isDark = (row,c2) => row>=0 && row<m.size && c2>=0 && c2<m.size &&
-      bytes[row*m.size+c2] === 1 && !inLogo(ox+(c2+0.5)*cell, oy+(row+0.5)*cell);
-    // Trace the UNION BOUNDARY of all dark modules: emit a unit edge only where a
-    // dark cell borders a non-dark cell (so edges shared by two dark modules are
-    // never drawn → no internal seams/middle lines), then chain edges into closed
-    // loops. Touching modules become ONE continuous region — clean for extrusion.
-    const d = _qrOutlinePath(isDark, m.size, ox, oy, cell);
-    qrLayer = `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="#ffffff"/>`
-            + `<path d="${d}" fill="${col}" fill-rule="evenodd" shape-rendering="crispEdges"/>`;
-    // Embed-area outline (matches the card: circle for service, rounded square for UPI).
-    if (lr) {
-      const sw = 2.5 * SC;
-      outline = (lay.logoShape === 'circle')
-        ? `<circle cx="${(lr.x+lr.w/2).toFixed(1)}" cy="${(lr.y+lr.h/2).toFixed(1)}" r="${(lr.w/2).toFixed(1)}" fill="none" stroke="${pc}" stroke-width="${sw}"/>`
-        : `<rect x="${lr.x.toFixed(1)}" y="${lr.y.toFixed(1)}" width="${lr.w.toFixed(1)}" height="${lr.h.toFixed(1)}" rx="${(7*SC).toFixed(1)}" fill="none" stroke="${pc}" stroke-width="${sw}"/>`;
-    }
+  try {
+    const svg = await window.SVGCard.buildVectorSVG(state, longMM);
+    downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), safeName(getFormData()) + '_qr.svg');
+    showStatus('SVG saved — pure vector @ ' + Math.round(longMM) + 'mm (text outlined, QR union, extrusion-ready)', 'ok');
+  } catch (e) {
+    console.error(e);
+    showStatus('SVG export failed: ' + e.message, 'err');
   }
-
-  // ── Restore the embedded CENTRE logo only ──
-  // Every logo (top emblem + payment/service badges) is already drawn — in its
-  // correct COLOUR — in the base raster, so we must NOT overlay the black SVG
-  // traces on top (that doubles/blackens them). The one logo the vector QR hides
-  // is the QR-centre logo: crop it from the card (colour) and re-place it on top
-  // of the white QR field so it stays visible. This keeps the SVG matching the PNG.
-  let logoLayer = '';
-  const imgs = (lay && Array.isArray(lay.images)) ? lay.images : [];
-  const centreOf = (im) => ({ cxp: im.x*SC + im.w*SC/2, cyp: im.y*SC + im.h*SC/2 });
-  const inLogoRect = (im) => { const c=centreOf(im); return lr && c.cxp>=lr.x && c.cxp<=lr.x+lr.w && c.cyp>=lr.y && c.cyp<=lr.y+lr.h; };
-  if (lr && cv) {
-    const centre = imgs.find(inLogoRect);
-    if (centre) {
-      const x=centre.x*SC, y=centre.y*SC, w=centre.w*SC, h=centre.h*SC;
-      try {
-        const c2=document.createElement('canvas'); c2.width=Math.round(w); c2.height=Math.round(h);
-        c2.getContext('2d').drawImage(cv, x, y, w, h, 0, 0, c2.width, c2.height);
-        logoLayer = `<image x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" xlink:href="${c2.toDataURL('image/png')}"/>`;
-      } catch (e) { /* tainted → skip */ }
-    }
-  }
-
-  // ── Vector text (redrawn from the recorded draws) ──
-  let textLayer = '';
-  if (lay && Array.isArray(lay.texts)) textLayer = lay.texts.map(t => _textToSvg(t, SC)).join('');
-
-  const svg =
-    `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ` +
-    `width="${wMM.toFixed(2)}mm" height="${hMM.toFixed(2)}mm" viewBox="0 0 ${W} ${H}">\n` +
-    `<image x="0" y="0" width="${W}" height="${H}" xlink:href="data:image/png;base64,${state.pngBase64}"/>\n` +
-    qrLayer + `\n` + logoLayer + `\n` + outline + `\n` + textLayer + `\n</svg>\n`;
-  downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), safeName(getFormData()) + '_qr.svg');
-  showStatus('SVG saved (card @ ' + Math.round(longMM) + 'mm — vector QR, logos, outline & text)', 'ok');
 }
 
 async function download3MF() {
@@ -877,27 +714,14 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   ctx.scale(SC,SC);
   const cx=M+W/2;
 
-  // ── Additive text capture (for the vector-SVG export) ───────────────
-  // Wrap fillText so every text draw is RECORDED (string + position + font +
-  // colour + alignment), while still drawing exactly as before. This changes
-  // nothing about how the card looks — it only lets the SVG export redraw the
-  // text as crisp vector. Coords are logical (pre-SC); store SC to scale later.
-  const _texts = [];
-  const _origFillText = ctx.fillText.bind(ctx);
-  ctx.fillText = function(str, x, y) {
-    _texts.push({ str, x, y, font: ctx.font, fill: ctx.fillStyle,
-                  align: ctx.textAlign, baseline: ctx.textBaseline, alpha: ctx.globalAlpha });
-    return _origFillText(str, x, y);
-  };
-  // Also record image draws (logos/badges/emblem) so the SVG export can swap in
-  // the original vector SVG files where available. Captures the 5-arg form
-  // drawImage(img, dx, dy, dw, dh); src identifies the logo (canvas/QR → '').
-  const _images = [];
-  const _origDrawImage = ctx.drawImage.bind(ctx);
-  ctx.drawImage = function(img, ...a) {
-    if (a.length === 4) _images.push({ src: (img && img.src) || '', x: a[0], y: a[1], w: a[2], h: a[3] });
-    return _origDrawImage(img, ...a);
-  };
+  // ── Vector capture (for the pure-vector SVG export) ─────────────────
+  // Wrap the context with a recorder that captures every draw call (fills,
+  // strokes, text, images) in order, while drawing exactly as before. The SVG
+  // export replays these as pure vector — text→glyph outlines, fills/strokes→
+  // paths, QR→union path, logos→inlined .svg. See public/svg-export.js. Coords
+  // are logical (the ctx is scale(SC)'d once); the export uses a logical viewBox.
+  const _svgRec = (window.SVGCard && window.SVGCard.makeRecorder)
+    ? window.SVGCard.makeRecorder(ctx) : null;
 
   function rr(x,y,w,h,r){
     ctx.beginPath();
@@ -1298,7 +1122,7 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
     canvas: out,
     layout: { qrRect, logoRect, logoShape, qrColor: qrCol,
               paletteHints: [pc, bgColor, '#ffffff', qrCol],
-              texts: _texts, images: _images, sc: SC, cardW: (W+M*2)*SC, cardH: (H+M*2)*SC },
+              svgRec: _svgRec, sc: SC, cardW: (W+M*2)*SC, cardH: (H+M*2)*SC },
   };
 }
 

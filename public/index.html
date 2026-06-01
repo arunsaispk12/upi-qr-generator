@@ -410,7 +410,10 @@
   </section>
 </main>
 
+<script src="vendor/opentype.min.js"></script>
+<script src="svg-export.js"></script>
 <script src="app.js"></script>
 <script type="module" src="qr3d.js"></script>
+<script>window.SVGCard && window.SVGCard.loadFonts().catch(()=>{});</script>
 </body>
 </html>

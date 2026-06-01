@@ -48,10 +48,15 @@ const QR_TYPES = {
     centreLabelText: 'IG',
     buildQrString({ igUsername }) {
       if (!igUsername) throw new Error('Username is required');
-      return `https://instagram.com/${igUsername.replace(/^@/, '').trim()}`;
+      // Strip @, keep only valid IG handle chars so nothing leaks into the path/query.
+      const handle = igUsername.replace(/^@/, '').trim().replace(/[^A-Za-z0-9._]/g, '');
+      if (!handle) throw new Error('Username is required');
+      return `https://instagram.com/${handle}`;
     },
     validate({ igUsername }) {
       if (!igUsername || !igUsername.trim()) return 'Instagram username is required';
+      if (!/^@?[A-Za-z0-9._]{1,30}$/.test(igUsername.trim()))
+        return 'Invalid Instagram username (letters, numbers, . and _ only)';
       return null;
     },
   },
