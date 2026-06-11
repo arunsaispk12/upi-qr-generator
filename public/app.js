@@ -671,6 +671,90 @@ const CARD_CFG = {
   wifi:          { action:'SCAN TO CONNECT',via:'WI-FI NETWORK', badges:false, pill:d=>d.wifiSsid||'Network' },
 };
 
+/* ── QR-centre logo helpers ───────────────────────────────────────
+ * contentBBox: bounding box of an image's visible (non-transparent) pixels.
+ * Badge PNGs in /logos carry uneven transparent padding (instagram.png is
+ * 1536×1024 around ~square artwork), so sizing by the file rect deforms or
+ * shrinks the artwork. Cached per image element.
+ */
+const _bboxCache = new WeakMap();
+function contentBBox(img) {
+  if (_bboxCache.has(img)) return _bboxCache.get(img);
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  let bb = { x: 0, y: 0, w: iw, h: ih };
+  try {
+    const c = document.createElement('canvas'); c.width = iw; c.height = ih;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0);
+    const px = x.getImageData(0, 0, iw, ih).data;
+    let minX = iw, minY = ih, maxX = -1, maxY = -1;
+    for (let r = 0; r < ih; r++) for (let cc = 0; cc < iw; cc++) {
+      if (px[(r * iw + cc) * 4 + 3] > 8) {
+        if (cc < minX) minX = cc; if (cc > maxX) maxX = cc;
+        if (r < minY) minY = r;   if (r > maxY) maxY = r;
+      }
+    }
+    if (maxX >= 0) bb = { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+  } catch { /* unreadable pixels — keep the full-image bbox */ }
+  _bboxCache.set(img, bb);
+  return bb;
+}
+
+/* Prepare an uploaded logo for the QR centre: trim the padding baked into the
+ * file (transparent or uniform border colour), square-crop around the content,
+ * and mask to the embed shape so the bitmap itself fills the reference circle
+ * exactly. The mask must live in the bitmap (not a canvas clip) because the
+ * SVG export replays recorded drawImage ops without clips. Returns a data-URL
+ * backed Image flagged `.prepared`, or the original image when there is
+ * nothing to trim safely.
+ */
+let _prepCache = { key: null, img: null };
+async function prepareCentreLogo(img, shape) {
+  const key = (img.src || '') + '|' + shape;
+  if (_prepCache.key === key) return _prepCache.img;
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  let result = img;
+  try {
+    const c = document.createElement('canvas'); c.width = iw; c.height = ih;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0);
+    const px = x.getImageData(0, 0, iw, ih).data;
+    // Padding = transparent, or close to the corner colour (e.g. a circular
+    // emblem exported on a solid black square).
+    const cIdx = [0, (iw - 1) * 4, (ih - 1) * iw * 4, ((ih - 1) * iw + iw - 1) * 4];
+    const bg = [0, 1, 2].map(k => cIdx.reduce((s, i) => s + px[i + k], 0) / 4);
+    const isPad = (i) => px[i + 3] < 16 ||
+      Math.abs(px[i] - bg[0]) + Math.abs(px[i + 1] - bg[1]) + Math.abs(px[i + 2] - bg[2]) < 48;
+    let minX = iw, minY = ih, maxX = -1, maxY = -1;
+    for (let r = 0; r < ih; r++) for (let cc = 0; cc < iw; cc++) {
+      if (!isPad((r * iw + cc) * 4)) {
+        if (cc < minX) minX = cc; if (cc > maxX) maxX = cc;
+        if (r < minY) minY = r;   if (r > maxY) maxY = r;
+      }
+    }
+    const bw = maxX - minX + 1, bh = maxY - minY + 1;
+    if (maxX >= 0 && bw * bh > iw * ih * 0.05) {
+      const side = Math.max(bw, bh) + 2;          // 1px margin for antialiased edges
+      const sx = minX + bw / 2 - side / 2, sy = minY + bh / 2 - side / 2;
+      const oc = document.createElement('canvas'); oc.width = oc.height = side;
+      const o = oc.getContext('2d');
+      o.drawImage(c, sx, sy, side, side, 0, 0, side, side);
+      if (shape === 'circle') {
+        o.globalCompositeOperation = 'destination-in';
+        o.beginPath(); o.arc(side / 2, side / 2, side / 2, 0, Math.PI * 2); o.fill();
+      }
+      result = await new Promise((res) => {
+        const out = new Image();
+        out.onload = () => { out.prepared = true; res(out); };
+        out.onerror = () => res(img);
+        out.src = oc.toDataURL('image/png');
+      });
+    }
+  } catch { /* unreadable pixels — use the original */ }
+  _prepCache = { key, img: result };
+  return result;
+}
+
 /* ── ONE universal branded print card (5"×11" @100px/inch, ECC-H) ──
  * The single locked "bhuvis" format used for EVERY QR type. Type-specific
  * content (action text, via text, info pill, payment badges) comes from
@@ -688,7 +772,12 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
   // Uploaded logo wins; otherwise the service badge fills BOTH the top emblem
   // and the QR centre (so service cards aren't empty at the top).
   const topLogo   = logoImg || svcLogoImg || null;   // top emblem
-  const centreImg = logoImg || svcLogoImg || null;   // QR-centre logo
+  // QR-centre logo. Uploads get trimmed + shape-masked so they fill the
+  // reference circle; service badges keep their native /logos src so the SVG
+  // export can still inline the matching vector by name.
+  const centreImg = logoImg
+    ? await prepareCentreLogo(logoImg, (data.embedShape === 'square') ? 'rect' : 'circle')
+    : (svcLogoImg || null);
 
   // Derive readable colours for text/lines on top of bgColor
   function luma(hex) {
@@ -965,10 +1054,27 @@ async function buildUpiCard(qrEl, logoImg, data, svcLogoImg) {
     // outline still delineates it. On light cards this stays light.
     ctx.fillStyle=bgColor; backing(); ctx.fill();
     if (centreImg) {
-      ctx.save();
-      if (logoShape === 'circle') { ctx.beginPath(); ctx.arc(ox+os/2, oy+os/2, os/2, 0, Math.PI*2); ctx.clip(); }
-      else { rr(ox, oy, os, os, 5); ctx.clip(); }
-      ctx.drawImage(centreImg, ox, oy, os, os); ctx.restore();
+      ctx.save(); backing(); ctx.clip();
+      if (centreImg.prepared) {
+        // Trimmed + masked upload: cover the whole reference circle/rect.
+        ctx.drawImage(centreImg, ox-5, oy-5, os+10, os+10);
+      } else {
+        // Service badge (or untrimmable upload): fit the visible artwork —
+        // not the padded file rect — inside the backing without distortion.
+        // Diagonal fit guarantees nothing pokes past a circular backing, so
+        // the unclipped SVG replay of this op stays inside the ring too.
+        const bb = contentBBox(centreImg);
+        const iw = centreImg.naturalWidth || centreImg.width;
+        const ih = centreImg.naturalHeight || centreImg.height;
+        const k  = (logoShape === 'circle')
+          ? (os+10) / Math.hypot(bb.w, bb.h)
+          : Math.min((os+10) / bb.w, (os+10) / bb.h);
+        ctx.drawImage(centreImg,
+          ox + os/2 - (bb.x + bb.w/2) * k,
+          oy + os/2 - (bb.y + bb.h/2) * k,
+          iw * k, ih * k);
+      }
+      ctx.restore();
     }
     // Outline around the embed area (delineates the logo zone, esp. when empty).
     ctx.strokeStyle=pc; ctx.lineWidth=2.5; backing(); ctx.stroke();
