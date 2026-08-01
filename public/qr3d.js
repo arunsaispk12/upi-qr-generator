@@ -244,9 +244,24 @@ function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, baseZOffs
     cx.restore();
   }
   const img = cx.getImageData(0, 0, work, work);
-  // k=3 keeps the logo's real colours while limiting anti-alias "muddy" shades.
-  const k = 3;
-  const { palette, labels } = quantize(img, k);
+  // Every bundled /logos/*.svg badge is pure monochrome (solid black fill on
+  // a transparent/white background) — genuinely only 2 real colours. Blind
+  // k-means (k=3) on a 2-colour source doesn't "limit" anti-alias shades, it
+  // hands the antialiasing halo along every edge its OWN 3rd cluster (since
+  // k-means always fills all k slots), which then gets extruded as a separate
+  // 1-2px-wide ring — too thin to print cleanly, and unstable under corner
+  // smoothing (a near-zero-width band self-intersects when corner-cut),
+  // which is exactly the "dashed/bumpy thin outline" artifact around the
+  // WhatsApp icon. Snapping straight to the two REAL colours (same
+  // nearest-colour technique the main card render already uses via
+  // quantizeToPalette/paletteHints) leaves no room for that halo cluster to
+  // exist at all: every edge pixel goes to whichever real colour it's closer
+  // to, so the icon's outline is exactly the SVG's own solid, un-halo'd
+  // silhouette. The non-SVG fallback below (photographic canvas crop) has no
+  // known palette, so it still needs blind quantize().
+  const { palette, labels } = svgImg
+    ? quantizeToPalette(img, ['#000000', '#ffffff'])
+    : quantize(img, 3);
   // Backing = the dominant (most-common) cluster, whether light or dark.
   const counts = new Array(palette.length).fill(0);
   for (const l of labels) counts[l]++;
