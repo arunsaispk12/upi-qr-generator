@@ -1,0 +1,13 @@
+{
+    "autodeskProduct": "Fusion360",
+    "type": "addin",
+    "id": "b7e2f8a1-6c4d-4f2e-9a3b-1d5e8c7f2a90",
+    "author": "UPI QR Generator project",
+    "description": {
+        "": "Parametric raised-QR plaque generator — native Fusion command, ported from this project's OpenSCAD export."
+    },
+    "version": "v1",
+    "runOnStartup": false,
+    "supportedOS": "windows|mac",
+    "editEnabled": true
+}
