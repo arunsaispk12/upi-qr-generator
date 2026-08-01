@@ -86,6 +86,36 @@ export function maskForColor(labels, colorIndex, { width, height }) {
 }
 
 /**
+ * Chaikin corner-cutting: replaces each vertex of a CLOSED polygon with two
+ * points 1/4 and 3/4 of the way along its outgoing edge. d3-contour's
+ * marching squares has no curve-fitting step — it just walks pixel-grid
+ * boundaries, so every curve (a circle, a rounded-rect corner) comes back as
+ * a staircase of axis-aligned micro-steps at the mask's raster resolution.
+ * Iterating this cut converges toward the quadratic B-spline through the
+ * original points, which rounds exactly that staircase into a smooth curve —
+ * the standard cheap fix for "un-stairstepping" a rasterized polygon, and
+ * one that doesn't require re-rendering the mask at a much higher (and much
+ * slower to quantize/contour) resolution. Collinear runs (straight mask
+ * edges) are unaffected: cutting a straight sequence of points yields points
+ * that are still collinear, so text strokes and rectangle edges stay crisp —
+ * only actual corners/curves get rounded.
+ */
+function chaikinSmooth(points, iterations) {
+  let pts = points;
+  for (let iter = 0; iter < iterations; iter++) {
+    if (pts.length < 3) break;
+    const next = new Array(pts.length * 2);
+    for (let i = 0; i < pts.length; i++) {
+      const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % pts.length];
+      next[i * 2]     = [x0 + (x1 - x0) * 0.25, y0 + (y1 - y0) * 0.25];
+      next[i * 2 + 1] = [x0 + (x1 - x0) * 0.75, y0 + (y1 - y0) * 0.75];
+    }
+    pts = next;
+  }
+  return pts;
+}
+
+/**
  * Contour a binary mask and extrude it.
  * d3-contour returns GeoJSON MultiPolygons: each polygon is [outerRing, ...holeRings].
  * Outer rings are CCW in pixel/y-down space; the Y negation `-y` below reverses
@@ -93,23 +123,26 @@ export function maskForColor(labels, colorIndex, { width, height }) {
  * winding THREE.Shape needs for holes to be subtracted correctly. Using `-y` (not
  * `height - y`) keeps the relief in the same [-height, 0] band as the base plate and
  * the sharp QR (which use `-py`), so all layers stay coplanar on one plaque.
- * @param {number} [simplifyTol=0] - Reserved for future polygon simplification; currently unused.
+ * @param {number} [smoothIterations=3] - Chaikin corner-cutting passes applied
+ *        to every ring before building the Shape; un-stairsteps the raw
+ *        marching-squares output into smooth curves. 0 disables smoothing.
  * @returns {ExtrudeGeometry}
  */
-export function maskToGeometry(mask, { width, height, heightMM, pxToMM = 1, simplifyTol = 0 }) {
+export function maskToGeometry(mask, { width, height, heightMM, pxToMM = 1, smoothIterations = 3 }) {
   const values = Array.from(mask, v => v);
   const polys = d3contours().size([width, height]).thresholds([0.5])(values);
   const shapes = [];
   for (const multi of polys) {
     for (const ring of multi.coordinates) {
-      const outer = ring[0]; // ring[0] = outer boundary, ring[1..] = holes
+      const outer = chaikinSmooth(ring[0], smoothIterations); // ring[0] = outer boundary, ring[1..] = holes
       const shape = new Shape();
       outer.forEach(([x, y], i) => i === 0
         ? shape.moveTo(x * pxToMM, -y * pxToMM)
         : shape.lineTo(x * pxToMM, -y * pxToMM));
       for (let h = 1; h < ring.length; h++) {
+        const holePts = chaikinSmooth(ring[h], smoothIterations);
         const path = new Path();
-        ring[h].forEach(([x, y], i) => i === 0
+        holePts.forEach(([x, y], i) => i === 0
           ? path.moveTo(x * pxToMM, -y * pxToMM)
           : path.lineTo(x * pxToMM, -y * pxToMM));
         shape.holes.push(path);

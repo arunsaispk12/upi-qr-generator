@@ -53,6 +53,37 @@ test('maskToGeometry yields a positive-area, bounded geometry', () => {
   assert.ok(bb.max.z - bb.min.z > 0, 'has extrude height');
 });
 
+test('maskToGeometry smooths staircase edges by default (a rasterized circle/curve is not left blocky)', () => {
+  // A filled circle's mask boundary is exactly what d3-contour's marching
+  // squares produces for any curved silhouette (a logo outline, a rounded-
+  // rect corner): a staircase of axis-aligned pixel steps, since the
+  // algorithm has no curve-fitting step. Chaikin smoothing (default
+  // smoothIterations=3) should round that staircase into a curve whose
+  // footprint area is close to the ideal circle's, not the smaller
+  // jagged-boundary area of the raw pixel mask.
+  const w = 60, h = 60, cx = 30, cy = 30, R = 22;
+  const mask = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = x - cx + 0.5, dy = y - cy + 0.5;
+    mask[y * w + x] = (dx * dx + dy * dy <= R * R) ? 1 : 0;
+  }
+
+  const smoothed = relief.maskToGeometry(mask, { width: w, height: h, heightMM: 1, pxToMM: 1 });
+  const jagged   = relief.maskToGeometry(mask, { width: w, height: h, heightMM: 1, pxToMM: 1, smoothIterations: 0 });
+
+  smoothed.computeBoundingBox(); jagged.computeBoundingBox();
+  const idealArea = Math.PI * R * R;
+  const smoothedSpan = smoothed.boundingBox.max.x - smoothed.boundingBox.min.x;
+  const jaggedSpan = jagged.boundingBox.max.x - jagged.boundingBox.min.x;
+  // Both should approximate the circle's diameter reasonably (smoothing must
+  // not shrink the shape into something unrecognizable)...
+  assert.ok(Math.abs(smoothedSpan - 2 * R) < 3, `smoothed span ~matches circle diameter (got ${smoothedSpan})`);
+  // ...and smoothing must actually add more, closer-to-curved vertices than
+  // the raw jagged contour (a real smoothing effect took place, not a no-op).
+  assert.ok(smoothed.attributes.position.count > jagged.attributes.position.count,
+    'smoothing adds vertices (rounds the staircase into a curve) vs. the raw jagged contour');
+});
+
 test('maskToGeometry subtracts an interior hole (donut produces more geometry than solid)', () => {
   const w = 12, h = 12;
   // solid 8x8 block

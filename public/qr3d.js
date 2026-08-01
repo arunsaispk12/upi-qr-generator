@@ -126,6 +126,7 @@ export function build(canvas, layout, matrix, opts = {}) {
   }
 
   const pxToMM = longEdgeMM / Math.max(w, h);
+  const qrRectMM = { x: r.x*scale*pxToMM, y: r.y*scale*pxToMM, w: r.w*scale*pxToMM, h: r.h*scale*pxToMM };
   const group = new THREE.Group();
 
   // Quantize. Prefer SNAP-TO-PALETTE using the card's exact design colours
@@ -139,14 +140,28 @@ export function build(canvas, layout, matrix, opts = {}) {
   const baseIdx = dominantLabel(labels, nColors);
 
   // Rounded-corner base plate (matches the card's rounded rectangle) — a finished
-  // plaque look rather than a hard-edged slab.
+  // plaque look rather than a hard-edged slab. The QR-rect footprint is always
+  // cut out of it (see roundedRectWithTabShape) and filled flush by the QR's
+  // own white field mesh below — two solids meeting at a shared XY boundary,
+  // not stacked on top of each other, so there's no step and nothing to
+  // z-fight: the previous "thin raised skin" approach could never be BOTH
+  // visually flush AND non-manifold-safe at the same time, since a truly
+  // flush top face is, by definition, coincident with the plate's.
   const plateW = w*pxToMM, plateH = h*pxToMM, plateR = plateW * 0.04;
-  const plateGeo = new THREE.ExtrudeGeometry(roundedRectShape(plateW, plateH, plateR),
+  // Keyring tab + hole, when requested, has to be part of the SAME contour as
+  // the plate (a single ExtrudeGeometry with the hole cut via shape.holes) —
+  // this file has no CSG boolean library, so a separately-placed boss+cylinder
+  // pair could never actually remove material for a real hole.
+  const tab = opts.keyringHole
+    ? { edge: opts.keyringPosition || 0, tabDiameter: opts.tabDiameter || 12,
+        holeDiameter: opts.holeDiameter || 5 }
+    : null;
+  const plateGeo = new THREE.ExtrudeGeometry(
+    roundedRectWithTabShape(plateW, plateH, plateR, tab, qrRectMM),
     { depth: baseT, bevelEnabled: false });
   const plate = new THREE.Mesh(plateGeo,
     new THREE.MeshStandardMaterial({ color: rgbHex(palette[baseIdx]) }));
-  plate.position.set(plateW/2, -plateH/2, 0); // centred shape → align to relief frame
-  group.add(plate);
+  group.add(plate); // shape is built directly in scene coordinates, no offset needed
 
   for (let c = 0; c < nColors; c++) {
     if (c === baseIdx) continue;
@@ -162,11 +177,12 @@ export function build(canvas, layout, matrix, opts = {}) {
     } catch (e) { console.warn('relief layer skipped', c, e.message); }
   }
 
-  // QR sits ON TOP of the base plate: a thin white field (layerH) lifted to z=baseT
-  // with black modules above it. Using baseZ=baseT here would bury the white field
-  // inside the base plate (overlapping volumes / coplanar faces) — wrong for a
-  // one-object-per-colour 3MF and causes z-fighting in preview.
-  const qrRectMM = { x: r.x*scale*pxToMM, y: r.y*scale*pxToMM, w: r.w*scale*pxToMM, h: r.h*scale*pxToMM };
+  // QR: the white "field" mesh below fills the plate's QR-rect cutout FLUSH —
+  // baseZ: baseT makes it exactly as thick as the plate, and qrGroup sits at
+  // z=0 (not offset above the plate), so it occupies precisely the same
+  // z-range [0, baseT] as the hole it fills. Only the dark modules (stacked
+  // on top of the field, per buildSharpQr's own baseZ+cellHeightMM/2 logic)
+  // stand proud of that shared surface.
   // Embedded centre logo: carve its modules out of the QR and rebuild it as a
   // colour relief from the (un-blanked) source canvas — matching the card's
   // logo-in-QR-centre treatment (e.g. the bhuvis_qr.png emblem).
@@ -174,15 +190,18 @@ export function build(canvas, layout, matrix, opts = {}) {
   const logoShape = layout.logoShape || 'rect';
   const logoRectMM = lr && { x: lr.x*scale*pxToMM, y: lr.y*scale*pxToMM, w: lr.w*scale*pxToMM, h: lr.h*scale*pxToMM };
   const { group: qrGroup } = buildSharpQr(matrix, qrRectMM,
-    { cellHeightMM: layerH, baseZ: layerH, logoRect: logoRectMM, logoShape,
+    { cellHeightMM: layerH, baseZ: baseT, logoRect: logoRectMM, logoShape,
       moduleColor: layout.qrColor || 0x000000 });
   if (lr) {
     // Prefer the dedicated SVG logo (crisp vector) for the 3D centre; else crop
-    // the rendered card canvas.
-    try { buildCenterLogo(canvas, lr, logoRectMM, layerH, logoShape, opts.logoSvgImg || null).children.forEach(m => qrGroup.add(m)); }
+    // the rendered card canvas. Sink 0.02mm into the field's top (now = baseT,
+    // the field's full thickness) — same anti-coincident-face overlap every
+    // other layer in this file uses.
+    try { buildCenterLogo(canvas, lr, logoRectMM, layerH, baseT - 0.02, logoShape, opts.logoSvgImg || null).children.forEach(m => qrGroup.add(m)); }
     catch (e) { console.warn('centre logo skipped', e.message); }
   }
-  qrGroup.position.z = baseT;
+  // qrGroup itself needs NO z offset: its field fills the plate's cutout hole
+  // exactly, from z=0 to z=baseT, matching the plate's own thickness.
   group.add(qrGroup);
   return group;
 }
@@ -192,9 +211,12 @@ export function build(canvas, layout, matrix, opts = {}) {
  * un-blanked) source card canvas. The DOMINANT (most-common) colour cluster is
  * treated as the backing and skipped — works whether the backing is light or
  * dark; the remaining clusters extrude as the raised logo. Returns a THREE.Group
- * whose meshes sit at z=heightMM (on top of the QR field), in qrRectMM coords.
+ * whose meshes sit at z=baseZOffsetMM (on top of the QR field), in qrRectMM
+ * coords — baseZOffsetMM is independent of heightMM (the logo's OWN relief
+ * thickness) precisely because the field it sits on is now much thinner than
+ * a QR module; conflating the two left a gap between the field and the logo.
  */
-function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, logoShape = 'rect', svgImg = null) {
+function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, baseZOffsetMM, logoShape = 'rect', svgImg = null) {
   const work = svgImg ? 256 : 160; // SVG → render larger for a crisper silhouette
   const cc = document.createElement('canvas'); cc.width = work; cc.height = work;
   const cx = cc.getContext('2d');
@@ -238,27 +260,166 @@ function buildCenterLogo(srcCanvas, logoRectDev, logoRectMM, heightMM, logoShape
       if (mask.reduce((s, v) => s + v, 0) === 0) continue;
       const geo = maskToGeometry(mask, { width: work, height: work, heightMM, pxToMM: pxToMM_logo });
       const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: rgbHex(palette[c]) }));
-      mesh.position.set(logoRectMM.x, -logoRectMM.y, heightMM);
+      mesh.position.set(logoRectMM.x, -logoRectMM.y, baseZOffsetMM);
       grp.add(mesh);
     } catch (e) { /* skip empty/failed cluster */ }
   }
   return grp;
 }
 
-/** Centred rounded-rectangle THREE.Shape (origin at centre), for the base plate. */
-function roundedRectShape(w, h, r) {
-  r = Math.min(r, w/2, h/2);
-  const s = new THREE.Shape();
-  s.moveTo(-w/2 + r, -h/2);
-  s.lineTo(w/2 - r, -h/2);
-  s.quadraticCurveTo(w/2, -h/2, w/2, -h/2 + r);
-  s.lineTo(w/2, h/2 - r);
-  s.quadraticCurveTo(w/2, h/2, w/2 - r, h/2);
-  s.lineTo(-w/2 + r, h/2);
-  s.quadraticCurveTo(-w/2, h/2, -w/2, h/2 - r);
-  s.lineTo(-w/2, -h/2 + r);
-  s.quadraticCurveTo(-w/2, -h/2, -w/2 + r, -h/2);
-  return s;
+// ---------------------------------------------------------------------------
+// Keyring tab: a circular boss unioned onto the middle of one plate edge, with
+// the keyring hole punched straight through. Unlike the relief/QR layers
+// above, this can't be a separately-placed boss + cylinder pair — this file
+// has no CSG boolean library, so nothing would ever actually remove material
+// for the hole. Instead the tab bulge and the hole are built into ONE
+// THREE.Shape (bulge as part of the outer contour, hole via shape.holes), so
+// a single ExtrudeGeometry produces a real through-hole.
+//
+// tab.edge: 0 top, 1 right, 2 bottom, 3 left (matches the UI's keyringPosition).
+// The tab always centres on the middle of that edge, offset so its centre
+// sits 0.25×tabDiameter beyond the edge line (same proportions as the
+// OpenSCAD/Fusion builders' tab_x/tab_y formulas) — 0.75×tabDiameter pokes
+// outside the plate, 0.25×tabDiameter overlaps into it.
+// ---------------------------------------------------------------------------
+
+const TAB_OFFSET_RATIO = 0.25;
+
+function signedArea(pts) {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length];
+    a += x1 * y2 - x2 * y1;
+  }
+  return a / 2;
+}
+
+/** Reverse `pts` if needed so its winding matches `ccw` (signed area sign). */
+function ensureWinding(pts, ccw) {
+  return (signedArea(pts) > 0) === ccw ? pts : pts.slice().reverse();
+}
+
+function sampleCircle(cx, cy, r, n) {
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+  }
+  return pts;
+}
+
+/** Tab centre in canvas (x right, y down) coordinates. */
+function tabCenterCanvas(w, h, tab) {
+  const vc = tab.tabDiameter * TAB_OFFSET_RATIO;
+  switch (tab.edge) {
+    case 0: return [w / 2, -vc];    // top
+    case 1: return [w + vc, h / 2]; // right
+    case 2: return [w / 2, h + vc]; // bottom
+    default: return [-vc, h / 2];   // left
+  }
+}
+
+/**
+ * Outer contour of the plate (+ tab bulge, if any) as canvas-space points,
+ * traced top-left → top edge → top-right → right edge → bottom-right →
+ * bottom edge → bottom-left → left edge, each corner a quarter-circle.
+ * On the tab's edge, the straight run is replaced by: run up to the first
+ * tangent point, an arc around the OUTSIDE of the tab circle (the major arc,
+ * through the point farthest from the plate) to the second tangent point,
+ * then the straight run resumes — the same shape a real 2D union would give.
+ */
+function plateOutlinePoints(w, h, r, tab) {
+  const N_CORNER = 8, N_ARC = 16;
+  const pts = [];
+  const corner = (cx, cy, a0, a1) => {
+    for (let i = 0; i <= N_CORNER; i++) {
+      const a = a0 + (a1 - a0) * i / N_CORNER;
+      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+  };
+  const edge = (edgeIdx, len, toCanvas) => {
+    const u0 = r, u1 = len - r;
+    if (!tab || tab.edge !== edgeIdx) {
+      pts.push(toCanvas(u0, 0));
+      pts.push(toCanvas(u1, 0));
+      return;
+    }
+    // Local (u,v) frame for this edge: v=0 is the edge line, v>0 is outward
+    // (away from the plate) — see tabCenterCanvas for the matching mapping.
+    const R = tab.tabDiameter / 2;
+    const vc = tab.tabDiameter * TAB_OFFSET_RATIO;
+    const uc = len / 2;
+    const c = Math.sqrt(Math.max(0, R * R - vc * vc));
+    // Tangent-point angles are always in (-180°,-90°) and (-90°,0°) respectively
+    // (vc, c > 0), so subtracting a full turn from the second always sweeps the
+    // long way around through the +90° apex — the outward bulge, not the small
+    // inward cap where the tab overlaps the plate.
+    const start = Math.atan2(-vc, -c);
+    const end = Math.atan2(-vc, c) - Math.PI * 2;
+    pts.push(toCanvas(u0, 0));
+    pts.push(toCanvas(uc - c, 0));
+    for (let i = 0; i <= N_ARC; i++) {
+      const a = start + (end - start) * i / N_ARC;
+      pts.push(toCanvas(uc + R * Math.cos(a), vc + R * Math.sin(a)));
+    }
+    pts.push(toCanvas(uc + c, 0));
+    pts.push(toCanvas(u1, 0));
+  };
+
+  corner(r, r, Math.PI, 1.5 * Math.PI);              // top-left
+  edge(0, w, (u, v) => [u, -v]);                     // top
+  corner(w - r, r, 1.5 * Math.PI, 2 * Math.PI);      // top-right
+  edge(1, h, (u, v) => [w + v, u]);                  // right
+  corner(w - r, h - r, 0, 0.5 * Math.PI);            // bottom-right
+  edge(2, w, (u, v) => [w - u, h + v]);               // bottom
+  corner(r, h - r, 0.5 * Math.PI, Math.PI);          // bottom-left
+  edge(3, h, (u, v) => [-v, h - u]);                  // left
+  return pts;
+}
+
+function rectHolePoints(x, y, w, h) {
+  return [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+}
+
+/** Push a hole (given as canvas-space points) into `shape`, oriented opposite the outer contour. */
+function addHole(shape, canvasPts) {
+  const pts = ensureWinding(canvasPts.map(([x, y]) => [x, -y]), false);
+  const path = new THREE.Path();
+  pts.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
+  path.closePath();
+  shape.holes.push(path);
+}
+
+/**
+ * Base-plate THREE.Shape: a keyring tab bulge unioned into the outer contour
+ * (optional) with the keyring hole (optional) and the QR-rect footprint
+ * (`qrHoleRect`, canvas-space {x,y,w,h}) punched through as genuine shape
+ * holes (see the section comment above for why this has to be one shape).
+ *
+ * The QR-rect hole matters even without a keyring tab: the QR's own white
+ * field mesh (built separately, see build()) fills this hole FLUSH — same
+ * z-range as the plate, not stacked on top of it — so the plate and the QR
+ * background share one continuous top surface with no step and no overlap
+ * to z-fight over. Built directly in this file's scene coordinates
+ * (scene_y = -canvas_y).
+ */
+export function roundedRectWithTabShape(w, h, r, tab, qrHoleRect) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  const outer = ensureWinding(
+    plateOutlinePoints(w, h, r, tab).map(([x, y]) => [x, -y]), true);
+
+  const shape = new THREE.Shape();
+  outer.forEach(([x, y], i) => (i === 0 ? shape.moveTo(x, y) : shape.lineTo(x, y)));
+  shape.closePath();
+
+  if (tab && tab.holeDiameter > 0) {
+    const [hcx, hcy] = tabCenterCanvas(w, h, tab);
+    addHole(shape, sampleCircle(hcx, hcy, tab.holeDiameter / 2, 32));
+  }
+  if (qrHoleRect) {
+    addHole(shape, rectHolePoints(qrHoleRect.x, qrHoleRect.y, qrHoleRect.w, qrHoleRect.h));
+  }
+  return shape;
 }
 
 function rgbHex([r,g,b]) { return (r<<16)|(g<<8)|b; }

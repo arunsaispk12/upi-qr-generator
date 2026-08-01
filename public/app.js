@@ -1398,6 +1398,10 @@ async function relief3dOpts() {
     colors:        Math.round(num('r3dColors', 4)),
     logoSvgImg:    await loadSvgLogoImg(),   // crisp 3D centre logo (or null → card crop)
     longEdgeMM:    num('r3dSize', 280),      // plaque long edge in mm (default ≈ real card size)
+    keyringHole:     checked('t-keyring'),
+    holeDiameter:    num('holeDiameter', 5),
+    tabDiameter:     num('tabDiameter', 12),
+    keyringPosition: Math.round(num('keyringPosition', 0)),
   };
   return o;
 }
