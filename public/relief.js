@@ -86,6 +86,92 @@ export function maskForColor(labels, colorIndex, { width, height }) {
 }
 
 /**
+ * Ramer-Douglas-Peucker simplification for a CLOSED ring: drops points that
+ * sit within `tol` pixels of the straight line between their neighbours,
+ * keeping only points that mark an actual direction change. d3-contour's
+ * marching squares emits a point at EVERY grid-cell crossing regardless of
+ * whether that point is a real corner — a long straight or gently-curved
+ * raster edge (e.g. a card's outer border, traced across a ~280mm perimeter
+ * at 760px working resolution) comes back as thousands of nearly-collinear
+ * points. Chaikin smoothing (below) then DOUBLES the point count on every
+ * iteration, so smoothing that raw, redundant point set directly is what
+ * blew up a single border layer to 370k+ triangles in a real card export.
+ * Simplifying first collapses those redundant runs to just the corners that
+ * matter, so Chaikin only ever smooths genuine curve structure.
+ */
+function distToSegment(p, p1, p2) {
+  const [x, y] = p, [x1, y1] = p1, [x2, y2] = p2;
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-12) return Math.hypot(x - x1, y - y1);
+  const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / lenSq));
+  return Math.hypot(x - (x1 + t * dx), y - (y1 + t * dy));
+}
+
+/** Iterative (stack-based, no recursion depth risk on large rings) RDP over
+ * an open chain given as indices into `points`; marks survivors in `keep`. */
+function rdpChain(points, idxs, tol, keep) {
+  if (idxs.length < 3) return;
+  const stack = [[0, idxs.length - 1]];
+  while (stack.length) {
+    const [lo, hi] = stack.pop();
+    if (hi <= lo + 1) continue;
+    let maxDist = -1, at = -1;
+    for (let i = lo + 1; i < hi; i++) {
+      const d = distToSegment(points[idxs[i]], points[idxs[lo]], points[idxs[hi]]);
+      if (d > maxDist) { maxDist = d; at = i; }
+    }
+    if (maxDist > tol) {
+      keep[idxs[at]] = 1;
+      stack.push([lo, at], [at, hi]);
+    }
+  }
+}
+
+function ringArea(points) {
+  let a = 0;
+  for (let i = 0; i < points.length; i++) {
+    const [x1, y1] = points[i], [x2, y2] = points[(i + 1) % points.length];
+    a += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(a) / 2;
+}
+
+function simplifyRing(points, tol) {
+  const n = points.length;
+  if (n < 5) return points;
+  const keep = new Uint8Array(n);
+  keep[0] = 1;
+  // Closed ring: split into two open chains at the two points with the
+  // largest mutual separation, since RDP is defined for open polylines.
+  let b = 1, maxD = 0;
+  for (let i = 1; i < n; i++) {
+    const d = (points[i][0] - points[0][0]) ** 2 + (points[i][1] - points[0][1]) ** 2;
+    if (d > maxD) { maxD = d; b = i; }
+  }
+  keep[b] = 1;
+  const chain1 = []; for (let i = 0; i <= b; i++) chain1.push(i);
+  const chain2 = []; for (let i = b; i < n; i++) chain2.push(i); chain2.push(0);
+  rdpChain(points, chain1, tol, keep);
+  rdpChain(points, chain2, tol, keep);
+  const out = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(points[i]);
+  if (out.length < 3) return points;
+  // Safety net: a THIN shape (a decorative rule line, a narrow letter stroke)
+  // can have its width-defining points fall within `tol` of the long axis
+  // between its two farthest-apart points — RDP would then strip exactly the
+  // points that give the shape its width, collapsing it toward a degenerate
+  // sliver that ExtrudeGeometry's earcut triangulation can't cleanly cap
+  // (open/boundary edges — a real gap in the print, not just a lost detail).
+  // Simplification must never change the shape enough to risk that, so any
+  // simplified ring whose area drifts more than 10% from the original is
+  // rejected in favour of the untouched original points.
+  const originalArea = ringArea(points), simplifiedArea = ringArea(out);
+  if (originalArea > 0 && Math.abs(simplifiedArea - originalArea) / originalArea > 0.10) return points;
+  return out;
+}
+
+/**
  * Chaikin corner-cutting: replaces each vertex of a CLOSED polygon with two
  * points 1/4 and 3/4 of the way along its outgoing edge. d3-contour's
  * marching squares has no curve-fitting step — it just walks pixel-grid
@@ -124,23 +210,49 @@ function chaikinSmooth(points, iterations) {
  * `height - y`) keeps the relief in the same [-height, 0] band as the base plate and
  * the sharp QR (which use `-py`), so all layers stay coplanar on one plaque.
  * @param {number} [smoothIterations=3] - Chaikin corner-cutting passes applied
- *        to every ring before building the Shape; un-stairsteps the raw
- *        marching-squares output into smooth curves. 0 disables smoothing.
+ *        to every ring (after simplification) before building the Shape;
+ *        un-stairsteps the raw marching-squares output into smooth curves.
+ *        0 disables smoothing.
+ * @param {number} [simplifyTolPx=0] - Ramer-Douglas-Peucker tolerance, in
+ *        source-raster pixels, applied to every ring BEFORE smoothing (0
+ *        disables it — the default). Marching squares emits a point at every
+ *        grid-cell crossing regardless of whether it's a real corner, so a
+ *        large contour (a card's outer border, say) comes back with
+ *        thousands of redundant near-collinear points, and simplifying those
+ *        away before Chaikin (which doubles point count per iteration) can
+ *        cut triangle counts drastically. BUT: d3-contour's marching squares
+ *        can and does produce rings that visit the same grid-corner twice,
+ *        threading multiple disjoint regions together (e.g. separate letters
+ *        of a text label) via a single shared pinch point — RDP's global
+ *        farthest-pair-chord logic has no notion of that structure and can
+ *        collapse a 2000+ point multi-glyph ring down to ~4 points, silently
+ *        replacing several small shapes with one wildly wrong blob spanning
+ *        their combined bounding area. The area-preservation safety check
+ *        below does NOT catch this failure mode, because the pinch-point
+ *        bridges themselves contribute ~0 area either way — simplifying them
+ *        away barely moves the measured area even though it destroys the
+ *        shape. Chaikin smoothing alone (this function's real default) has
+ *        no such risk: it only ever rounds each edge locally and can't delete
+ *        structure, so it faithfully preserves multiply-connected rings.
+ *        Simplification is left here, off by default, for future refinement
+ *        (e.g. only applying it to rings verified simple/non-self-touching)
+ *        rather than deleted outright.
  * @returns {ExtrudeGeometry}
  */
-export function maskToGeometry(mask, { width, height, heightMM, pxToMM = 1, smoothIterations = 3 }) {
+export function maskToGeometry(mask, { width, height, heightMM, pxToMM = 1, smoothIterations = 3, simplifyTolPx = 0 }) {
   const values = Array.from(mask, v => v);
   const polys = d3contours().size([width, height]).thresholds([0.5])(values);
   const shapes = [];
+  const process = ring => chaikinSmooth(simplifyTolPx > 0 ? simplifyRing(ring, simplifyTolPx) : ring, smoothIterations);
   for (const multi of polys) {
     for (const ring of multi.coordinates) {
-      const outer = chaikinSmooth(ring[0], smoothIterations); // ring[0] = outer boundary, ring[1..] = holes
+      const outer = process(ring[0]); // ring[0] = outer boundary, ring[1..] = holes
       const shape = new Shape();
       outer.forEach(([x, y], i) => i === 0
         ? shape.moveTo(x * pxToMM, -y * pxToMM)
         : shape.lineTo(x * pxToMM, -y * pxToMM));
       for (let h = 1; h < ring.length; h++) {
-        const holePts = chaikinSmooth(ring[h], smoothIterations);
+        const holePts = process(ring[h]);
         const path = new Path();
         holePts.forEach(([x, y], i) => i === 0
           ? path.moveTo(x * pxToMM, -y * pxToMM)
